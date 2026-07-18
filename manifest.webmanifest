@@ -1,0 +1,15 @@
+{
+  "name": "CMO — Centro Maestro de Operaciones",
+  "short_name": "CMO",
+  "description": "Operación diaria NT / GF: pendientes con cronómetro, jornada, proyectos, correos y accesos a NetSuite.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "es",
+  "background_color": "#0e1512",
+  "theme_color": "#0e1512",
+  "icons": [
+    { "src": "icon.svg", "sizes": "192x192 512x512 any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
