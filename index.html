@@ -243,6 +243,47 @@
   /* menú de módulos */
   #modmenu{position:absolute;top:56px;right:12px;z-index:60;width:230px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);border-radius:12px;padding:12px;box-shadow:0 20px 50px -20px #000}
   #modmenu h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint)}
+  /* SALA EN VIVO */
+  .iconbtn.sos{color:var(--crit);border-color:color-mix(in srgb,var(--crit) 40%,var(--border))}
+  .iconbtn.sos:hover{border-color:var(--crit);background:var(--crit-dim);color:var(--crit)}
+  .livebanner{position:fixed;right:16px;bottom:16px;z-index:80;width:340px;max-width:92vw;display:flex;flex-direction:column;gap:8px}
+  .livecard{background:linear-gradient(180deg,var(--crit-dim),var(--panel));border:1px solid var(--crit);border-radius:12px;padding:11px 12px;box-shadow:0 18px 45px -18px #000;display:flex;gap:11px;align-items:center;animation:pop .3s}
+  @keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .livecard .sos-ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:none;font-size:15px}
+  .livecard .lc{flex:1;min-width:0}
+  .livecard .lc b{font-size:13px;display:block}
+  .livecard .lc small{font-size:11.5px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .livecard .lc .who2{font-size:10.5px;color:var(--faint);margin-top:2px}
+  .livecard .obtn2{border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:800;cursor:pointer;background:var(--accent);color:#06140d;white-space:nowrap}
+  .modalbig{width:520px;max-width:94vw}
+  .modalbig textarea{width:100%;background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:var(--r-sm);padding:11px 12px;font:inherit;font-size:14px;min-height:70px;resize:vertical}
+  .modalbig textarea:focus{outline:2px solid var(--accent);border-color:transparent}
+  .people{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+  .pchip{display:flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--panel-3);color:var(--muted);border-radius:999px;padding:6px 12px 6px 7px;cursor:pointer;font-size:12.5px;user-select:none}
+  .pchip .av2{width:22px;height:22px;border-radius:50%;background:#182620;color:var(--accent);display:grid;place-items:center;font-size:10px;font-weight:700}
+  .pchip.on{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+  .sevsel{display:flex;gap:6px;margin-top:5px}
+  .sevbtn{flex:1;border:1px solid var(--border);background:var(--panel-3);color:var(--muted);border-radius:8px;padding:8px;font-size:12px;font-weight:700;cursor:pointer}
+  .sevbtn.on{color:#fff}
+  .wa{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;color:var(--muted);cursor:pointer}
+  .wa input{width:34px;height:20px;appearance:none;background:var(--border);border-radius:999px;position:relative;cursor:pointer;transition:.2s;flex:none}
+  .wa input:checked{background:var(--good)}
+  .wa input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+  .wa input:checked::after{left:16px}
+  .rhead{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .rhead .rsev{width:12px;height:12px;border-radius:50%;flex:none}
+  .rhead h2{margin:0;font-size:16px;flex:1;min-width:0;text-align:left}
+  .feed{max-height:min(52vh,360px);overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding:6px 2px}
+  .fmsg{display:flex;gap:9px}
+  .fmsg .av2{width:28px;height:28px;border-radius:8px;background:#182620;color:var(--accent);display:grid;place-items:center;font-size:11px;font-weight:700;flex:none}
+  .fmsg .fb{font-size:12.5px}
+  .fmsg .fb b{font-weight:650}
+  .fmsg .fb .tm{color:var(--faint);font-size:10.5px;margin-left:5px;font-family:var(--mono)}
+  .fmsg .fb p{margin:2px 0 0;background:var(--panel-3);padding:7px 11px;border-radius:4px 11px 11px 11px;display:inline-block}
+  .fmsg.me .fb p{background:var(--accent-dim)}
+  .rinput{display:flex;gap:8px;margin-top:10px}
+  .rinput input{flex:1;background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:var(--r-sm);padding:10px 12px;font:inherit;font-size:13px}
+  .rinput input:focus{outline:2px solid var(--accent);border-color:transparent}
   @media (max-width:980px){
     html,body{height:auto}
     .grid{height:auto;grid-template-columns:1fr;grid-template-areas:"top" "jor" "left" "center" "right" "bar";gap:10px;padding:10px}
@@ -315,6 +356,7 @@
     <div class="stat"><span class="k">Otros hoy</span><span class="v" id="topOtros" style="color:var(--warn)">00:00</span></div>
     <div class="stat"><span class="k">Pendientes</span><span class="v" id="topPend">0</span></div>
     <div class="stat" style="border-right:1px solid var(--border-soft)"><span class="clock" id="clock">--:--:--</span><span class="date" id="date"></span></div>
+    <button class="iconbtn sos" id="sosBtn" title="Pedir apoyo al equipo (En vivo)">📣</button>
     <button class="iconbtn" id="modBtn" title="Módulos activos">⚙</button>
     <button class="iconbtn" id="themeBtn" title="Tema claro/obscuro">☀</button>
     <div class="whoami"><span class="em" id="whoEmail"></span><button id="signout">Cerrar sesión</button></div>
@@ -391,6 +433,34 @@
     <div class="msg" id="catMsg"></div>
   </div>
 </div>
+<!-- ===== SALA EN VIVO ===== -->
+<div id="sosModal" class="hidden">
+  <div class="card modalbig">
+    <div class="logo" style="width:40px;height:40px;font-size:18px;background:linear-gradient(135deg,var(--crit),#b8443a)">📣</div>
+    <h2>Pedir apoyo al equipo</h2>
+    <p class="s">Se avisa en vivo a quien elijas y les aparece en su tablero.</p>
+    <label>¿Qué está pasando?</label>
+    <textarea id="sosText" placeholder="Ej. Camión volcado en la 57 cerca de San Luis, carga de 2x6 — necesito apoyo con grúa y avisar al cliente."></textarea>
+    <label>Nivel</label>
+    <div class="sevsel" id="sosSev"></div>
+    <label>¿A quién sumas?</label>
+    <div class="people" id="sosPeople"></div>
+    <label class="wa"><input type="checkbox" id="sosWa"> También avisar por WhatsApp (se conecta después)</label>
+    <button class="primary" id="sosSend">Lanzar alerta en vivo</button>
+    <button class="primary sec" id="sosCancel">Cancelar</button>
+    <div class="msg" id="sosMsg"></div>
+  </div>
+</div>
+<div id="roomModal" class="hidden">
+  <div class="card modalbig">
+    <div class="rhead"><span class="rsev" id="rSev"></span><h2 id="rTitle">Incidente</h2>
+      <button class="pbtn" id="rResolve">✓ Resolver</button><button class="pbtn" id="rClose">✕</button></div>
+    <div id="rMeta" style="font-size:11.5px;color:var(--faint);margin-bottom:8px"></div>
+    <div class="feed" id="rFeed"></div>
+    <div class="rinput"><input id="rInput" placeholder="Escribe al equipo…" autocomplete="off"><button class="primary" style="width:auto;margin:0;padding:10px 16px" id="rSend">Enviar</button></div>
+  </div>
+</div>
+<div id="liveBanner" class="livebanner hidden"></div>
 <div id="toast"></div>
 
 <script type="module">
@@ -538,7 +608,8 @@ async function enterApp(session){
   renderClock();
   await jornadaOpen();
   await refresh();
-  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); }
+  await loadTeam(); await pollIncidents();
+  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); }
   window.addEventListener('beforeunload',()=>{ try{ navigator.sendBeacon && jornadaBeat(); }catch(e){} });
 }
 
@@ -766,6 +837,78 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message',ev=>{if(ev.data==='sw-updated')location.reload();});
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').then(r=>{try{r&&r.update&&r.update();}catch(e){}}).catch(()=>{}));
 }
+// ===== SALA EN VIVO =====
+let team=[], incidents=[], curRoom=null, roomSub=null, sosSel=new Set(), sosSevVal='critico';
+const SEVS=[['critico','🔴 Crítico'],['urgente','🟠 Urgente'],['atencion','🟡 Atención'],['info','🔵 Info']];
+function sevColor(s){return ({critico:'var(--crit)',urgente:'#e08a4f',atencion:'var(--warn)',info:'#7aa2f7'})[s]||'var(--crit)';}
+function ini(n){return (n||'?').replace(/[<>]/g,'').split(/\s+/).map(x=>x[0]||'').slice(0,2).join('').toUpperCase();}
+async function loadTeam(){const{data}=await sb.from('cmo_user').select('id,nombre,email,rol');team=(data||[]).filter(u=>u.id!==(me&&me.id));}
+function openSos(){
+  sosSel=new Set();sosSevVal='critico';$("#sosText").value='';$("#sosMsg").textContent='';$("#sosWa").checked=false;
+  $("#sosSev").innerHTML=SEVS.map(([k,l])=>'<button class="sevbtn'+(k==='critico'?' on':'')+'" data-sev="'+k+'"'+(k==='critico'?' style="background:'+sevColor(k)+';border-color:'+sevColor(k)+'"':'')+'>'+l+'</button>').join('');
+  $("#sosPeople").innerHTML=team.length?team.map(u=>'<button class="pchip" data-u="'+u.id+'"><span class="av2">'+esc(ini(u.nombre||u.email))+'</span>'+esc(u.nombre||u.email)+'</button>').join(''):'<span style="color:var(--faint);font-size:12px">Aún no hay más compañeros dados de alta (deben entrar una vez para aparecer aquí).</span>';
+  $("#sosModal").classList.remove("hidden");setTimeout(()=>$("#sosText").focus(),30);
+}
+document.addEventListener("click",e=>{
+  const sv=e.target.closest("#sosSev .sevbtn");
+  if(sv){sosSevVal=sv.dataset.sev;document.querySelectorAll("#sosSev .sevbtn").forEach(b=>{const on=b===sv;b.classList.toggle("on",on);b.setAttribute("style",on?('background:'+sevColor(b.dataset.sev)+';border-color:'+sevColor(b.dataset.sev)):'');});return;}
+  const pc=e.target.closest("#sosPeople .pchip");
+  if(pc){const id=pc.dataset.u;if(sosSel.has(id))sosSel.delete(id);else sosSel.add(id);pc.classList.toggle("on");return;}
+});
+async function sendSos(){
+  const txt=$("#sosText").value.trim();if(!txt){$("#sosMsg").textContent="Escribe qué está pasando";$("#sosMsg").className="msg err";return;}
+  if(!sosSel.size){$("#sosMsg").textContent="Elige al menos a una persona";$("#sosMsg").className="msg err";return;}
+  $("#sosSend").disabled=true;$("#sosMsg").textContent="Enviando…";$("#sosMsg").className="msg";
+  const{data:inc,error}=await sb.from('cmo_incidente').insert({titulo:txt.slice(0,80),detalle:txt,severidad:sosSevVal,a_whatsapp:$("#sosWa").checked}).select().single();
+  if(error){$("#sosSend").disabled=false;$("#sosMsg").textContent="Error: "+error.message;$("#sosMsg").className="msg err";return;}
+  await sb.from('cmo_incidente_part').insert([...sosSel].map(uid=>({incidente_id:inc.id,usuario_id:uid})));
+  await sb.from('cmo_incidente_msg').insert({incidente_id:inc.id,texto:txt});
+  $("#sosSend").disabled=false;$("#sosModal").classList.add("hidden");
+  toast("📣 Alerta en vivo enviada"+($("#sosWa").checked?" · WhatsApp pendiente":""));
+  await pollIncidents();openRoom(inc.id);
+}
+async function pollIncidents(){const{data}=await sb.from('cmo_incidente').select('*').eq('estado','abierto').order('creado_en',{ascending:false});incidents=data||[];renderBanner();}
+function renderBanner(){
+  const b=$("#liveBanner");const open=incidents.filter(i=>i.id!==curRoom);
+  if(!open.length){b.classList.add("hidden");b.innerHTML="";return;}
+  b.classList.remove("hidden");
+  b.innerHTML=open.slice(0,3).map(i=>{const mine=i.creado_por===(me&&me.id);
+    return '<div class="livecard"><span class="sos-ic" style="background:'+sevColor(i.severidad)+'">📣</span><div class="lc"><b>'+(mine?'Tú pediste apoyo':'Piden apoyo')+'</b><small>'+esc(i.titulo)+'</small><div class="who2">'+esc((i.severidad||'').toUpperCase())+'</div></div><button class="obtn2" data-open="'+i.id+'">Abrir</button></div>';}).join('');
+  b.querySelectorAll("[data-open]").forEach(x=>x.addEventListener("click",()=>openRoom(x.dataset.open)));
+}
+async function openRoom(id){
+  let inc=incidents.find(x=>x.id===id);
+  if(!inc){const r=await sb.from('cmo_incidente').select('*').eq('id',id).single();inc=r.data;}
+  if(!inc)return;curRoom=id;
+  $("#rTitle").textContent=inc.titulo;$("#rSev").style.background=sevColor(inc.severidad);
+  const{data:parts}=await sb.from('cmo_incidente_part').select('usuario_id').eq('incidente_id',id);
+  const creador=(inc.creado_por===(me&&me.id))?{nombre:'ti'}:team.find(u=>u.id===inc.creado_por);
+  $("#rMeta").textContent=(inc.severidad||'').toUpperCase()+' · '+(((parts||[]).length)+1)+' participantes · la abrió '+(creador?creador.nombre:'—');
+  $("#rResolve").style.display=(inc.creado_por===(me&&me.id)||(me&&me.rol==='director'))?'':'none';
+  await loadMsgs(id);
+  $("#roomModal").classList.remove("hidden");
+  if(roomSub){try{sb.removeChannel(roomSub);}catch(e){}roomSub=null;}
+  roomSub=sb.channel('room-'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'cmo_incidente_msg',filter:'incidente_id=eq.'+id},()=>loadMsgs(id)).subscribe();
+  renderBanner();
+}
+async function loadMsgs(id){
+  const{data}=await sb.from('cmo_incidente_msg').select('*').eq('incidente_id',id).order('creado_en');
+  const feed=$("#rFeed");
+  feed.innerHTML=(data||[]).map(m=>{const u=team.find(x=>x.id===m.usuario_id);const mine=m.usuario_id===(me&&me.id);const nm=mine?'Tú':(u?u.nombre:'—');const t=new Date(m.creado_en).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    return '<div class="fmsg'+(mine?' me':'')+'"><span class="av2">'+esc(ini(nm))+'</span><div class="fb"><b>'+esc(nm)+'</b><span class="tm">'+t+'</span><p>'+esc(m.texto)+'</p></div></div>';}).join('');
+  feed.scrollTop=feed.scrollHeight;
+}
+async function sendRoomMsg(){const inp=$("#rInput");const t=inp.value.trim();if(!t||!curRoom)return;inp.value='';await sb.from('cmo_incidente_msg').insert({incidente_id:curRoom,texto:t});await loadMsgs(curRoom);}
+async function resolveRoom(){if(!curRoom)return;if(!confirm("¿Marcar este incidente como resuelto?"))return;await sb.from('cmo_incidente').update({estado:'resuelto',resuelto_en:nowISO()}).eq('id',curRoom);const id=curRoom;closeRoom();toast("Incidente resuelto");await pollIncidents();}
+function closeRoom(){$("#roomModal").classList.add("hidden");if(roomSub){try{sb.removeChannel(roomSub);}catch(e){}roomSub=null;}curRoom=null;renderBanner();}
+$("#sosBtn").addEventListener("click",openSos);
+$("#sosCancel").addEventListener("click",()=>$("#sosModal").classList.add("hidden"));
+$("#sosSend").addEventListener("click",sendSos);
+$("#rClose").addEventListener("click",closeRoom);
+$("#rResolve").addEventListener("click",resolveRoom);
+$("#rSend").addEventListener("click",sendRoomMsg);
+$("#rInput").addEventListener("keydown",e=>{if(e.key==='Enter')sendRoomMsg();});
+
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
 </body>
