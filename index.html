@@ -445,8 +445,7 @@
     <div class="sevsel" id="sosSev"></div>
     <label>¿A quién sumas?</label>
     <div class="people" id="sosPeople"></div>
-    <label class="wa"><input type="checkbox" id="sosWa"> También avisar por WhatsApp (se conecta después)</label>
-    <button class="primary" id="sosSend">Lanzar alerta en vivo</button>
+    <button class="primary" id="sosSend" style="margin-top:16px">Lanzar alerta en vivo</button>
     <button class="primary sec" id="sosCancel">Cancelar</button>
     <div class="msg" id="sosMsg"></div>
   </div>
@@ -844,7 +843,7 @@ function sevColor(s){return ({critico:'var(--crit)',urgente:'#e08a4f',atencion:'
 function ini(n){return (n||'?').replace(/[<>]/g,'').split(/\s+/).map(x=>x[0]||'').slice(0,2).join('').toUpperCase();}
 async function loadTeam(){const{data}=await sb.from('cmo_user').select('id,nombre,email,rol');team=(data||[]).filter(u=>u.id!==(me&&me.id));}
 function openSos(){
-  sosSel=new Set();sosSevVal='critico';$("#sosText").value='';$("#sosMsg").textContent='';$("#sosWa").checked=false;
+  sosSel=new Set();sosSevVal='critico';$("#sosText").value='';$("#sosMsg").textContent='';
   $("#sosSev").innerHTML=SEVS.map(([k,l])=>'<button class="sevbtn'+(k==='critico'?' on':'')+'" data-sev="'+k+'"'+(k==='critico'?' style="background:'+sevColor(k)+';border-color:'+sevColor(k)+'"':'')+'>'+l+'</button>').join('');
   $("#sosPeople").innerHTML=team.length?team.map(u=>'<button class="pchip" data-u="'+u.id+'"><span class="av2">'+esc(ini(u.nombre||u.email))+'</span>'+esc(u.nombre||u.email)+'</button>').join(''):'<span style="color:var(--faint);font-size:12px">Aún no hay más compañeros dados de alta (deben entrar una vez para aparecer aquí).</span>';
   $("#sosModal").classList.remove("hidden");setTimeout(()=>$("#sosText").focus(),30);
@@ -859,12 +858,12 @@ async function sendSos(){
   const txt=$("#sosText").value.trim();if(!txt){$("#sosMsg").textContent="Escribe qué está pasando";$("#sosMsg").className="msg err";return;}
   if(!sosSel.size){$("#sosMsg").textContent="Elige al menos a una persona";$("#sosMsg").className="msg err";return;}
   $("#sosSend").disabled=true;$("#sosMsg").textContent="Enviando…";$("#sosMsg").className="msg";
-  const{data:inc,error}=await sb.from('cmo_incidente').insert({titulo:txt.slice(0,80),detalle:txt,severidad:sosSevVal,a_whatsapp:$("#sosWa").checked}).select().single();
+  const{data:inc,error}=await sb.from('cmo_incidente').insert({titulo:txt.slice(0,80),detalle:txt,severidad:sosSevVal}).select().single();
   if(error){$("#sosSend").disabled=false;$("#sosMsg").textContent="Error: "+error.message;$("#sosMsg").className="msg err";return;}
   await sb.from('cmo_incidente_part').insert([...sosSel].map(uid=>({incidente_id:inc.id,usuario_id:uid})));
   await sb.from('cmo_incidente_msg').insert({incidente_id:inc.id,texto:txt});
   $("#sosSend").disabled=false;$("#sosModal").classList.add("hidden");
-  toast("📣 Alerta en vivo enviada"+($("#sosWa").checked?" · WhatsApp pendiente":""));
+  toast("📣 Alerta en vivo enviada");
   await pollIncidents();openRoom(inc.id);
 }
 async function pollIncidents(){const{data}=await sb.from('cmo_incidente').select('*').eq('estado','abierto').order('creado_en',{ascending:false});incidents=data||[];renderBanner();}
