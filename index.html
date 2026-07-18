@@ -151,8 +151,8 @@
   .pcard .pend{font-size:11px;color:var(--muted)}.pcard .pend b{color:var(--ink);font-size:16px;font-family:var(--mono)}
   .pcard .ptime .val{font-family:var(--mono);font-size:15px;color:var(--accent)}
   .pcard .ptime .cap{font-size:9.5px;color:var(--faint);text-transform:uppercase}
-  .pcard .qadd{position:absolute;right:8px;top:8px;width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--panel-3);color:var(--accent);font-size:14px;cursor:pointer;opacity:0;transition:.12s;z-index:2}
-  .pcard:hover .qadd{opacity:1}
+  .pcard .qadd{position:absolute;right:7px;top:7px;height:21px;padding:0 8px;border-radius:6px;border:1px solid color-mix(in srgb,var(--accent) 38%,transparent);background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700;cursor:pointer;z-index:2;white-space:nowrap}
+  .pcard .qadd:hover{background:var(--accent);color:#06140d}
   .pcard .restore{border:1px solid var(--border);background:var(--panel-3);color:var(--good);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;font-weight:600}
   .mail{display:flex;gap:10px;padding:10px;border-radius:var(--r-sm);border:1px solid var(--border-soft);background:var(--card);margin-bottom:8px;cursor:pointer}
   .mail:hover{border-color:#2d4034}.mail.unread{border-left:3px solid var(--warn)}
@@ -203,8 +203,11 @@
   #toast{position:fixed;bottom:110px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;background:#0f1a14;border:1px solid var(--accent);color:var(--ink);padding:9px 16px;border-radius:999px;font-size:12px;transition:.3s;pointer-events:none;z-index:120;box-shadow:0 10px 30px -10px #000}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   /* overlays */
-  .recpop{position:absolute;top:52px;right:52px;z-index:70;display:flex;flex-wrap:wrap;gap:5px;max-width:236px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);border-radius:10px;padding:9px;box-shadow:0 20px 50px -20px #000}
-  .recpop .rlbl{width:100%;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);margin-bottom:2px}
+  .recrow{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:2px 10px 11px;border-bottom:1px solid var(--border-soft)}
+  .recrow .rlbl{font-size:11.5px;color:var(--muted);margin-right:3px;font-weight:600}
+  .recrow .rhint{font-size:11px;color:var(--faint);margin-left:2px}
+  .recrow .rclose{margin-left:auto;border:1px solid var(--border);background:var(--panel-3);color:var(--muted);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;font-weight:600}
+  .recrow .rclose:hover{border-color:var(--accent);color:var(--accent)}
   .daychip{border:1px solid var(--border);background:var(--panel-3);color:var(--muted);border-radius:7px;width:30px;height:30px;cursor:pointer;font-size:12px;font-weight:700}
   .daychip.on{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
   .daychip.clr{width:auto;padding:0 10px;color:var(--faint)}
@@ -326,13 +329,13 @@
 
   <div class="panel left">
     <header><span class="ic">◧</span><span class="h">Mis Pendientes</span><span class="count" id="pendCount">0 activas</span></header>
-    <div class="addrow" style="position:relative">
+    <div class="addrow">
       <input id="newTask" placeholder="Agregar pendiente…" autocomplete="off">
       <select id="newProj"></select>
-      <button class="addbtn" id="recBtn" title="Repetir en días (una vez por defecto)" style="background:var(--panel-3);color:var(--muted);border:1px solid var(--border);font-size:16px">↻</button>
+      <button class="addbtn" id="recBtn" title="Repetir en días (recurrente)" style="background:var(--panel-3);color:var(--muted);border:1px solid var(--border);font-size:16px">↻</button>
       <button class="addbtn" id="addBtn" title="Agregar">＋</button>
-      <div id="recPop" class="recpop hidden"></div>
     </div>
+    <div id="recRow" class="recrow hidden"></div>
     <div class="scroll" id="taskList"></div>
   </div>
 
@@ -443,15 +446,19 @@ function isPendingNow(t){return isWeekly(t)?(schedToday(t)&&!doneToday(t)):(t.es
 function descendantIds(id){return [id,...projects.filter(p=>p.parent_id===id).map(p=>p.id)];}
 // --- recurrencia (popover de días) ---
 function curRecur(){if(recEditTask){const t=tasks.find(x=>x.id===recEditTask);return (t&&t.dias_semana)||[];}return newRecur;}
-function renderRecPop(){const pop=$("#recPop");if(!pop)return;pop.innerHTML='<div class="rlbl">'+(recEditTask?'Editar repetición':'Repetir en')+'</div>';const cur=curRecur();
+function renderRecRow(){const pop=$("#recRow");if(!pop)return;const cur=curRecur();
+  const lbl=recEditTask?('Repetir «'+(((tasks.find(x=>x.id===recEditTask))||{}).titulo||'')+'» en:'):'Repetir en:';
+  pop.innerHTML='<span class="rlbl">'+esc(lbl)+'</span>';
   [1,2,3,4,5,6,7].forEach(d=>{const b=document.createElement("button");b.className="daychip"+(cur.includes(d)?" on":"");b.textContent=DOW[d];b.title=DOWFULL[d];b.addEventListener("click",()=>toggleDay(d));pop.appendChild(b);});
-  const clr=document.createElement("button");clr.className="daychip clr";clr.textContent="Una vez";clr.addEventListener("click",()=>setDays([]));pop.appendChild(clr);}
+  const clr=document.createElement("button");clr.className="daychip clr";clr.textContent="Una vez";clr.addEventListener("click",()=>setDays([]));pop.appendChild(clr);
+  const hint=document.createElement("span");hint.className="rhint";hint.textContent=cur.length?('↻ repite '+cur.map(d=>DOW[d]).join('·')):'sin días = una sola vez';pop.appendChild(hint);
+  const close=document.createElement("button");close.className="rclose";close.textContent=recEditTask?"Listo":"Cerrar";close.addEventListener("click",()=>{recEditTask=null;$("#recRow").classList.add("hidden");});pop.appendChild(close);}
 async function toggleDay(d){let cur=[...curRecur()];if(cur.includes(d))cur=cur.filter(x=>x!==d);else cur.push(d);cur.sort((a,b)=>a-b);await setDays(cur);}
 async function setDays(arr){
-  if(recEditTask){await sb.from('cmo_task').update({recurrencia:arr.length?'semanal':'unica',dias_semana:arr.length?arr:null}).eq('id',recEditTask);await refresh();renderRecPop();toast(arr.length?("Repite: "+arr.map(d=>DOW[d]).join('·')):"Ahora es de una sola vez");}
-  else{newRecur=arr;updateRecBtn();renderRecPop();}}
+  if(recEditTask){await sb.from('cmo_task').update({recurrencia:arr.length?'semanal':'unica',dias_semana:arr.length?arr:null}).eq('id',recEditTask);await refresh();renderRecRow();toast(arr.length?("Repite: "+arr.map(d=>DOW[d]).join('·')):"Ahora es de una sola vez");}
+  else{newRecur=arr;updateRecBtn();renderRecRow();}}
 function updateRecBtn(){const b=$("#recBtn");if(!b)return;const on=newRecur.length>0;b.style.color=on?'var(--accent)':'var(--muted)';b.style.borderColor=on?'var(--accent)':'var(--border)';b.title=on?('Repite: '+newRecur.map(d=>DOW[d]).join('·')):'Repetir en días (una vez por defecto)';}
-function openRecEdit(t){recEditTask=t.id;const p=$("#recPop");p.classList.remove("hidden");renderRecPop();toast("Editando repetición de: "+t.titulo);}
+function openRecEdit(t){recEditTask=t.id;const p=$("#recRow");p.classList.remove("hidden");renderRecRow();}
 // --- categorías / subcategorías ---
 function newCategory(parentId){
   $("#catTitle").textContent=parentId?'Nueva Subcategoría':'Nueva Categoría';$("#catName").value='';$("#catMsg").textContent='';$("#catMsg").className='msg';
@@ -607,7 +614,7 @@ async function addTask(){ const inp=$("#newTask");let pid=$("#newProj").value;co
   if(!pid){toast("Elige un proyecto / categoría");return;}
   await sb.from('cmo_task').insert({project_id:pid,titulo:title,estado:'pendiente',sort:0,recurrencia:newRecur.length?'semanal':'unica',dias_semana:newRecur.length?[...newRecur]:null});
   inp.value="";toast(newRecur.length?("＋ Agregada, repite "+newRecur.map(d=>DOW[d]).join('·')+": "+title):("＋ Agregada: "+title));
-  newRecur=[];updateRecBtn();$("#recPop").classList.add("hidden");await refresh(); }
+  newRecur=[];updateRecBtn();$("#recRow").classList.add("hidden");await refresh(); }
 async function delTask(id){ if(!confirm("¿Eliminar este pendiente?"))return; await sb.from('cmo_task').delete().eq('id',id); toast("Eliminada"); await refresh(); }
 function openProject(id){selProj=id;renderAll();}
 async function archiveProject(id){const p=proj(id);if(!p)return;
@@ -678,7 +685,7 @@ function renderProjects(){const grid=$("#projGrid");grid.innerHTML="";const av=(
     const ids=descendantIds(p.id);const pend=tasks.filter(t=>ids.includes(t.project_id)&&isPendingNow(t)).length;
     const c=document.createElement("div");c.className="pcard"+(selProj===p.id?" sel":"");c.dataset.id=p.id;c.style.setProperty("--dom",dom.color);
     const subHtml=subs.length?'<div class="subs">'+subs.map(s=>{const sp=tasks.filter(t=>t.project_id===s.id&&isPendingNow(t)).length;return '<button class="subchip'+(selProj===s.id?' on':'')+'" data-sub="'+s.id+'">'+esc(s.nombre)+(sp?' <b>'+sp+'</b>':'')+'</button>';}).join('')+'</div>':'';
-    c.innerHTML='<button class="qadd" title="Agregar subcategoría" data-addsub="'+p.id+'">＋</button><div class="dom">'+esc(dom.name)+'</div><div class="pname">'+esc(p.nombre)+'</div>'+subHtml+'<div class="pfoot"><div class="pend"><b>'+pend+'</b> pend.</div><div class="ptime"><div class="val">'+fmtHM(catSecToday(p.id))+'</div><div class="cap">hoy</div></div></div>';
+    c.innerHTML='<button class="qadd" title="Agregar subcategoría dentro de esta" data-addsub="'+p.id+'">＋ sub</button><div class="dom">'+esc(dom.name)+'</div><div class="pname">'+esc(p.nombre)+'</div>'+subHtml+'<div class="pfoot"><div class="pend"><b>'+pend+'</b> pend.</div><div class="ptime"><div class="val">'+fmtHM(catSecToday(p.id))+'</div><div class="cap">hoy</div></div></div>';
     c.addEventListener("click",e=>{const sub=e.target.closest('[data-sub]');if(sub){selProj=sub.dataset.sub;renderAll();return;}const add=e.target.closest('[data-addsub]');if(add){e.stopPropagation();newCategory(p.id);return;}openProject(p.id);});
     grid.appendChild(c);});
   const addC=document.createElement("div");addC.className="pcard";addC.style.cssText="border-style:dashed;display:grid;place-items:center;min-height:76px;cursor:pointer;color:var(--accent)";
@@ -743,8 +750,7 @@ document.addEventListener("click",e=>{if(!e.target.closest("#modmenu")&&!e.targe
 $("#addBtn").addEventListener("click",addTask);
 $("#newTask").addEventListener("keydown",e=>{if(e.key==='Enter')addTask();});
 $("#newProj").addEventListener("change",e=>{if(e.target.value==='__new__')newCategory(null);});
-$("#recBtn").addEventListener("click",e=>{e.stopPropagation();recEditTask=null;const p=$("#recPop");p.classList.toggle("hidden");if(!p.classList.contains("hidden"))renderRecPop();});
-document.addEventListener("click",e=>{if(!e.target.closest("#recPop")&&!e.target.closest("#recBtn")&&!e.target.closest(".rec")){$("#recPop").classList.add("hidden");recEditTask=null;}});
+$("#recBtn").addEventListener("click",e=>{e.stopPropagation();recEditTask=null;const p=$("#recRow");p.classList.toggle("hidden");if(!p.classList.contains("hidden"))renderRecRow();});
 $("#catCancel").addEventListener("click",()=>{$("#catModal").classList.add("hidden");if($("#newProj").value==='__new__')$("#newProj").selectedIndex=0;});
 $("#catSave").addEventListener("click",async()=>{const nombre=$("#catName").value.trim();if(!nombre){$("#catMsg").textContent="Escribe un nombre";$("#catMsg").className="msg err";return;}
   const dom=$("#catDom").value,parent=$("#catParent").value||null;$("#catSave").disabled=true;$("#catMsg").textContent="Creando…";$("#catMsg").className="msg";
