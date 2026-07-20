@@ -170,6 +170,10 @@
   .nslink:hover{border-color:var(--accent);color:var(--accent)}.nslink.unset{opacity:.6;border-style:dashed}
   .nslink .nsic{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;background:#16221b60;font-size:14px;flex:none}
   .nslink .arw{margin-left:auto;color:var(--faint);font-size:12px}
+  .colarow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--border-soft)}
+  .colarow:first-child{border-top:0}
+  .colarow .cl{flex:1;font-size:12.5px;color:var(--ink)}
+  .colarow .cn{font-family:var(--mono);font-size:19px;font-weight:750;color:var(--accent);font-variant-numeric:tabular-nums}
   .bar{grid-area:bar;display:flex;align-items:stretch;gap:12px;background:linear-gradient(180deg,#111a15,#0d1611);border:1px solid var(--border);border-radius:var(--r);padding:12px}
   .otros{display:flex;align-items:center;gap:16px;padding:8px 22px;border-radius:var(--r);cursor:pointer;border:1px solid var(--warn-dim);background:linear-gradient(180deg,#231c0b,#1a1508);min-width:280px;transition:.15s;user-select:none}
   .otros:hover{border-color:var(--warn)}
@@ -397,6 +401,10 @@
       <header><span class="ic">⧉</span><span class="h">Accesos NetSuite</span><span class="count">directo</span></header>
       <div class="nsgrid" id="nsGrid"></div>
     </div>
+    <div class="panel" style="flex:none">
+      <header><span class="ic">▤</span><span class="h">Colas NetSuite</span><span class="count" id="colasWhen"></span></header>
+      <div id="colasList" style="padding:4px 2px"></div>
+    </div>
   </div>
 
   <div class="bar">
@@ -501,7 +509,7 @@ function todayStartISO(){const d=new Date();d.setHours(0,0,0,0);return d.toISOSt
 function weekStartISO(){const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);d.setHours(0,0,0,0);return d.toISOString();}
 function localDate(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 
-let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], att=null;
+let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null;
 let active=null, filter="all", selProj=null, toastT, ticking=false;
 let newRecur=[], recEditTask=null;
 const DOW=['','L','M','M','J','V','S','D'];                     // ISO 1=lun..7=dom
@@ -641,14 +649,15 @@ $("#jBtn").addEventListener("click",async()=>{
 // ===== DATA =====
 async function refresh(){
   $("#app").classList.add("loading");
-  const[p,t,e,l,m]=await Promise.all([
+  const[p,t,e,l,m,q]=await Promise.all([
     sb.from('cmo_project').select('*').order('sort'),
     sb.from('cmo_task').select('*').order('sort'),
     sb.from('cmo_time_entry').select('*').or('ended_at.is.null,started_at.gte.'+weekStartISO()),
     sb.from('cmo_ns_link').select('*').order('sort'),
     sb.from('cmo_mail_alert').select('*').neq('status','done').order('received_at',{ascending:false}),
+    sb.from('cmo_ns_metric').select('*').order('orden'),
   ]);
-  projects=p.data||[]; tasks=t.data||[]; entries=e.data||[]; links=l.data||[]; mails=m.data||[];
+  projects=p.data||[]; tasks=t.data||[]; entries=e.data||[]; links=l.data||[]; mails=m.data||[]; nsm=q.data||[];
   active=entries.find(x=>!x.ended_at)||null;
   $("#app").classList.remove("loading"); renderAll();
 }
@@ -781,6 +790,11 @@ function renderNS(){const g=$("#nsGrid");g.innerHTML="";
     a.innerHTML='<span class="nsic">'+(l.icon||'↗')+'</span>'+esc(l.label)+'<span class="arw">'+(l.url==='#'?'✎':'↗')+'</span>';
     a.addEventListener("click",e=>{e.preventDefault();if(l.url&&l.url!=='#')window.open(l.url,'_blank');else setLinkUrl(l);});
     a.addEventListener("contextmenu",e=>{e.preventDefault();setLinkUrl(l);});g.appendChild(a);});}
+function renderColas(){const el=$("#colasList");if(!el)return;
+  if(!nsm.length){el.innerHTML='<div class="empty" style="padding:14px 10px">Sin colas aún.</div>';$("#colasWhen").textContent='';return;}
+  el.innerHTML=nsm.map(x=>'<div class="colarow"><span class="cl">'+esc(x.etiqueta)+'</span><span class="cn">'+x.conteo+'</span></div>').join('');
+  const last=(nsm[0]&&nsm[0].capturado_en)?new Date(nsm[0].capturado_en):null;
+  $("#colasWhen").textContent=last?('act. '+last.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})):'';}
 function renderBars(){const bars=$("#bars"),leg=$("#legend");
   const wt=projects.map(p=>({p,s:projSecToday(p)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s);const ot=otrosSecToday();const max=Math.max(1,...wt.map(x=>x.s),ot);
   bars.innerHTML="";wt.forEach(x=>{const c=document.createElement("div");c.className="bcol";c.style.setProperty("--dom",(DOMAINS[x.p.dominio]||{}).color||'#2b3a30');c.style.height=(6+94*x.s/max)+"%";c.title=x.p.nombre+" · "+fmtHM(x.s);bars.appendChild(c);});
@@ -799,7 +813,7 @@ function renderNowSelect(){const sel=$("#newProj");const cur=sel.value;sel.inner
   if(selProj&&projects.some(p=>p.id===selProj))sel.value=selProj;else if(cur&&cur!=='__new__')sel.value=cur;}
 function paintOtros(){const on=active&&active.kind==='otros';const ob=$("#otrosBtn");ob.classList.toggle("active",on);ob.setAttribute("aria-pressed",on?"true":"false");
   $("#oTxt").textContent=on?"EN OTROS…":"OTROS";$("#oIcon").textContent=on?"■":"◉";}
-function renderAll(){renderNowSelect();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
+function renderAll(){renderNowSelect();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
 
 // ===== MÓDULOS =====
 function applyMods(mods){document.body.classList.toggle("off-jornada",!mods.includes("jornada"));
