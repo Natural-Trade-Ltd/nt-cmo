@@ -577,7 +577,7 @@ function weekStartISO(){const d=new Date();const day=(d.getDay()+6)%7;d.setDate(
 function localDate(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 
 let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null;
-let active=null, filter="all", selProj=null, toastT, ticking=false;
+let active=null, filter="all", selProj=null, toastT, ticking=false, lastAct=Date.now();
 let newRecur=[], recEditTask=null;
 const DOW=['','L','M','M','J','V','S','D'];                     // ISO 1=lun..7=dom
 const DOWFULL=['','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
@@ -684,20 +684,33 @@ async function enterApp(session){
   if(me && !me.funciones_sembradas){ await materializeSeed(); }
   await refresh();
   await pollIncidents();
-  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); }
+  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); setInterval(checkAutoClose,60000);
+    ['click','keydown','pointerdown'].forEach(ev=>document.addEventListener(ev,()=>{lastAct=Date.now();},{passive:true})); }
   window.addEventListener('beforeunload',()=>{ try{ navigator.sendBeacon && jornadaBeat(); }catch(e){} });
 }
 
 // ===== JORNADA =====
 async function jornadaOpen(){
   const f=localDate();
+  // auto-cerrar jornadas de días anteriores que quedaron abiertas (olvidaron terminar / cerraron la PC)
+  try{ const{data:prev}=await sb.from('cmo_attendance').select('id,entrada,last_beat').is('salida',null).neq('fecha',f);
+    for(const r of (prev||[])) await sb.from('cmo_attendance').update({salida:r.last_beat||r.entrada,origen_salida:'auto_prev'}).eq('id',r.id);
+  }catch(e){}
   const{data}=await sb.from('cmo_attendance').select('*').eq('fecha',f).maybeSingle();
   if(!data){ const{data:ins}=await sb.from('cmo_attendance').insert({fecha:f,entrada:nowISO(),last_beat:nowISO(),origen_entrada:'app_open'}).select().single(); att=ins; }
   else { att=data; await sb.from('cmo_attendance').update({last_beat:nowISO()}).eq('id',data.id); }
   paintJornada();
 }
 async function jornadaBeat(){ if(att && !att.salida) await sb.from('cmo_attendance').update({last_beat:nowISO()}).eq('id',att.id); }
-async function jornadaClose(origen){ if(att && !att.salida){ await sb.from('cmo_attendance').update({salida:nowISO(),origen_salida:origen}).eq('id',att.id); att.salida=nowISO(); paintJornada(); } }
+async function jornadaClose(origen,at){ if(att && !att.salida){ const s=at||nowISO(); await sb.from('cmo_attendance').update({salida:s,origen_salida:origen}).eq('id',att.id); att.salida=s; paintJornada(); } }
+function checkAutoClose(){
+  if(!att||att.salida)return;
+  if(active){lastAct=Date.now();return;}          // hay cronómetro corriendo = activo
+  if(new Date().getHours()<18)return;             // sólo después de las 6pm
+  if(Date.now()-lastAct < 30*60*1000)return;      // última actividad hace <30 min
+  jornadaClose('auto_inactivo', new Date(lastAct).toISOString());
+  toast('Jornada cerrada automáticamente · sin actividad después de las 6pm');
+}
 function paintJornada(){
   if(!att){return;}
   const inD=att.entrada?new Date(att.entrada):null;
