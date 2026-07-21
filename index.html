@@ -82,6 +82,8 @@
   .clock .date{font-family:var(--ui);font-size:11px;color:var(--muted);text-align:right}
   .iconbtn{background:var(--panel-3);border:1px solid var(--border);color:var(--ink);width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:15px;flex:none}
   .iconbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .viewsel{display:none;background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:8px;height:34px;padding:0 8px;font-size:12px;cursor:pointer;max-width:150px}
+  .viewsel:focus{outline:2px solid var(--accent);border-color:transparent}
   .whoami{display:flex;flex-direction:column;align-items:flex-end;padding-left:14px;border-left:1px solid var(--border-soft)}
   .whoami .em{font-size:11px;color:var(--muted)}
   .whoami button{background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer;padding:0}
@@ -373,6 +375,7 @@
     <div class="stat"><span class="k">Otros hoy</span><span class="v" id="topOtros" style="color:var(--warn)">00:00</span></div>
     <div class="stat"><span class="k">Pendientes</span><span class="v" id="topPend">0</span></div>
     <div class="stat" style="border-right:1px solid var(--border-soft)"><span class="clock" id="clock">--:--:--</span><span class="date" id="date"></span></div>
+    <select id="viewAs" class="viewsel" title="Ver tareas de (equipo)"></select>
     <button class="iconbtn" id="notasBtn" title="Notas (comentarios libres)">📝</button>
     <button class="iconbtn sos" id="sosBtn" title="Pedir apoyo al equipo (En vivo)">📣</button>
     <button class="iconbtn" id="modBtn" title="Módulos activos">⚙</button>
@@ -503,6 +506,11 @@ const SB_KEY='sb_publishable_dx3xOfvKAexeUSqJ_3jVkw_LdUKuXLt';
 const sb=createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 
 const DOMAINS={
+  maritimo:{name:"Marítimo",color:"#4dd0c4",dim:"#123634"}, ferrocarril:{name:"Ferrocarril/Terrestre",color:"#e0b25b",dim:"#3a2f12"},
+  importacion:{name:"Importación/Aduana",color:"#c792ea",dim:"#2e2140"}, inventario:{name:"Inventario",color:"#66c2a0",dim:"#123028"},
+  patios:{name:"Patios",color:"#7aa2f7",dim:"#182a4a"}, facturacion:{name:"Facturación",color:"#e17a6e",dim:"#3a1e1a"},
+  tarifas:{name:"Tarifas/Cotización",color:"#c8a24a",dim:"#332a10"}, administrativo:{name:"Administrativo",color:"#9aa7b8",dim:"#232c30"},
+  admin:{name:"Administrativo",color:"#9aa7b8",dim:"#232c30"}, juliana:{name:"Juliana (Por asignar)",color:"#f4b740",dim:"#3a2c0e"},
   operacion:{name:"Operación",color:"#57b083",dim:"#153026"}, comercial:{name:"Comercial",color:"#7aa2f7",dim:"#182a4a"},
   cotiza:{name:"Cotización",color:"#4dd0c4",dim:"#123634"}, docs:{name:"Documentos",color:"#e0b25b",dim:"#3a2f12"},
   mercado:{name:"Mercado",color:"#c8a24a",dim:"#332a10"}, netsuite:{name:"NetSuite",color:"#c792ea",dim:"#2e2140"},
@@ -623,8 +631,7 @@ function showOnboarding(session,team,usr){
     try{
       await sb.from('cmo_user').upsert({id:session.user.id,email:session.user.email,nombre,rol:team.rol,pais:team.pais,timezone:tz,modulos:mods,onboarded:true,tema:document.documentElement.classList.contains('light')?'light':'dark'});
       await sb.from('cmo_schedule').upsert({dias:[1,2,3,4,5],hora_inicio:ini,hora_fin:fin});
-      // sembrar proyectos + accesos NS de arranque
-      await sb.from('cmo_project').insert(STARTER_PROJECTS);
+      // accesos NS de arranque (las categorías son compartidas, ya existen)
       await sb.from('cmo_ns_link').insert(STARTER_NS);
       const{data:usr2}=await sb.from('cmo_user').select('*').eq('id',session.user.id).single();
       me=usr2; $("#onboard").classList.add("hidden"); enterApp(session);
@@ -641,7 +648,9 @@ async function enterApp(session){
   renderClock();
   await jornadaOpen();
   await refresh();
-  await loadTeam(); fillResp(); await pollIncidents();
+  await loadTeam(); fillResp();
+  if(me && !me.funciones_sembradas){ await materializeSeed(); }
+  await pollIncidents();
   if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); }
   window.addEventListener('beforeunload',()=>{ try{ navigator.sendBeacon && jornadaBeat(); }catch(e){} });
 }
@@ -776,6 +785,10 @@ function renderTasks(){const list=$("#taskList");list.innerHTML="";
     b.querySelector('[data-a="arch"]').addEventListener('click',()=>archiveProject(selProj));
     b.querySelector('[data-a="clr"]').addEventListener('click',()=>{selProj=null;renderAll();});list.appendChild(b);}
   let show=tasks.slice();
+  if(veTodo()){
+    if(viewAs==='__me') show=show.filter(t=>t.owner_id===(me&&me.id)||t.responsable_id===(me&&me.id));
+    else if(viewAs && viewAs.slice(0,2)==='u:'){const uid=viewAs.slice(2); show=show.filter(t=>t.owner_id===uid||t.responsable_id===uid);}
+  }
   if(selProj){const ids=descendantIds(selProj);show=show.filter(t=>ids.includes(t.project_id));}
   else{show=show.filter(t=>{const p=proj(t.project_id);return p&&!p.archivado;});if(filter!=='all')show=show.filter(t=>(proj(t.project_id)||{}).dominio===filter);}
   show=show.filter(t=>schedToday(t));                    // recurrentes: solo en sus días
@@ -844,7 +857,7 @@ function renderNowSelect(){const sel=$("#newProj");const cur=sel.value;sel.inner
   if(selProj&&projects.some(p=>p.id===selProj))sel.value=selProj;else if(cur&&cur!=='__new__')sel.value=cur;}
 function paintOtros(){const on=active&&active.kind==='otros';const ob=$("#otrosBtn");ob.classList.toggle("active",on);ob.setAttribute("aria-pressed",on?"true":"false");
   $("#oTxt").textContent=on?"EN OTROS…":"OTROS";$("#oIcon").textContent=on?"■":"◉";}
-function renderAll(){renderNowSelect();fillResp();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
+function renderAll(){renderNowSelect();fillResp();fillViewAs();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
 
 // ===== MÓDULOS =====
 function applyMods(mods){document.body.classList.toggle("off-jornada",!mods.includes("jornada"));
@@ -978,6 +991,32 @@ $("#notasBtn").addEventListener("click",()=>{$("#notasModal").classList.remove("
 $("#notasClose").addEventListener("click",()=>$("#notasModal").classList.add("hidden"));
 $("#notaAdd").addEventListener("click",addNota);
 $("#notaInput").addEventListener("keydown",e=>{if(e.key==='Enter')addNota();});
+
+// ===== siembra de funciones al primer login + vista "ver de todos" (Nina/Jorge) =====
+let viewAs='__me';
+function veTodo(){return me && (me.rol==='director' || me.rol==='gerente');}
+async function materializeSeed(){
+  if(!me || me.funciones_sembradas) return;
+  const {data:seeds}=await sb.from('cmo_seed_task').select('*').eq('email',me.email).order('sort');
+  if(seeds && seeds.length){
+    const rows=seeds.map(s=>{
+      const cat=projects.find(p=>!p.owner_id && p.dominio===s.categoria) || projects.find(p=>!p.owner_id && p.dominio==='admin');
+      return { titulo:s.titulo, notas:s.notas||null, project_id:cat?cat.id:null, estado:'pendiente', responsable_id:s.es_juliana?null:me.id, sort:s.sort };
+    });
+    await sb.from('cmo_task').insert(rows);
+    toast('Se cargaron '+rows.length+' funciones a tu tablero');
+  }
+  await sb.from('cmo_user').update({funciones_sembradas:true}).eq('id',me.id);
+  me.funciones_sembradas=true; await refresh();
+}
+function fillViewAs(){const s=$("#viewAs");if(!s)return;
+  if(!veTodo()){ s.style.display='none'; return; }
+  const cur=s.value||'__me';
+  const opts=[['__me','Ver: Yo'],['__all','Ver: Todos']].concat(team.map(u=>['u:'+u.id,'Ver: '+(u.nombre||u.email)]));
+  s.innerHTML=opts.map(o=>'<option value="'+o[0]+'">'+esc(o[1])+'</option>').join('');
+  s.value=cur; s.style.display='';
+}
+$("#viewAs").addEventListener("change",e=>{viewAs=e.target.value;renderTasks();});
 
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
