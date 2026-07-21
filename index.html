@@ -514,6 +514,12 @@
     <div id="resBody"></div>
   </div>
 </div>
+<div id="taskModal" class="hidden">
+  <div class="card modalbig">
+    <div class="rhead"><h2 style="flex:1">✎ Editar pendiente</h2><button class="pbtn" id="taskClose">✕</button></div>
+    <div id="taskEditBody"></div>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script type="module">
@@ -664,9 +670,9 @@ async function enterApp(session){
   applyMods(me.modulos||[]); applyTheme(me.tema||localStorage.getItem('cmo_theme')||'dark');
   renderClock();
   await jornadaOpen();
-  await refresh();
-  await loadTeam(); fillResp();
+  await loadTeam();
   if(me && !me.funciones_sembradas){ await materializeSeed(); }
+  await refresh();
   await pollIncidents();
   if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); }
   window.addEventListener('beforeunload',()=>{ try{ navigator.sendBeacon && jornadaBeat(); }catch(e){} });
@@ -745,7 +751,7 @@ async function addTask(){ const inp=$("#newTask");let pid=$("#newProj").value;co
   if(!pid){toast("Elige un proyecto / categoría");return;}
   const resp=($("#newResp")&&$("#newResp").value)||null;
   const due=($("#newDue")&&$("#newDue").value)||null;
-  await sb.from('cmo_task').insert({project_id:pid,titulo:title,estado:'pendiente',sort:0,recurrencia:newRecur.length?'semanal':'unica',dias_semana:newRecur.length?[...newRecur]:null,responsable_id:resp,fecha_limite:due});
+  await sb.from('cmo_task').insert({project_id:pid,titulo:title,estado:'pendiente',sort:0,recurrencia:newRecur.length?'semanal':'unica',dias_semana:newRecur.length?[...newRecur]:null,responsable_email:resp||null,fecha_limite:due});
   inp.value="";if($("#newDue"))$("#newDue").value="";toast(newRecur.length?("＋ Agregada, repite "+newRecur.map(d=>DOW[d]).join('·')+": "+title):("＋ Agregada: "+title));
   newRecur=[];updateRecBtn();$("#recRow").classList.add("hidden");await refresh(); }
 async function delTask(id){ if(!confirm("¿Eliminar este pendiente?"))return; await sb.from('cmo_task').delete().eq('id',id); toast("Eliminada"); await refresh(); }
@@ -782,19 +788,20 @@ function taskRow(t){const p=proj(t.project_id);const dom=p?DOMAINS[p.dominio]:{n
   const div=document.createElement("div");div.className="task"+(running?" running":"")+(done?" done":"");
   div.dataset.id=t.id;div.style.setProperty("--dom",(dom||{}).color);div.style.setProperty("--dom-dim",(dom||{}).dim);
   const linkBtn=t.link?'<button class="tbtn" data-act="openlink" title="Abrir enlace">🔗</button>':'<button class="tbtn dim" data-act="setlink" title="Vincular URL / conversación">🔗</button>';
+  const editBtn='<button class="tbtn" data-act="edit" title="Editar: responsable, categoría, repetir, fecha">✎</button>';
   let ctrl="";
-  if(done)ctrl=linkBtn+'<button class="tbtn done" data-act="del" title="Eliminar">🗑</button>';
-  else if(running)ctrl=linkBtn+'<button class="tbtn stop" data-act="pause" title="Pausar">⏸</button><button class="tbtn done" data-act="finish" title="Terminar">✓</button><button class="tbtn del2" data-act="del">🗑</button>';
-  else ctrl=linkBtn+'<button class="tbtn play" data-act="start" title="Iniciar">▶</button><button class="tbtn done" data-act="finish" title="Terminar">✓</button><button class="tbtn del2" data-act="del">🗑</button>';
+  if(done)ctrl=linkBtn+editBtn+'<button class="tbtn done" data-act="del" title="Eliminar">🗑</button>';
+  else if(running)ctrl=linkBtn+editBtn+'<button class="tbtn stop" data-act="pause" title="Pausar">⏸</button><button class="tbtn done" data-act="finish" title="Terminar">✓</button><button class="tbtn del2" data-act="del">🗑</button>';
+  else ctrl=linkBtn+editBtn+'<button class="tbtn play" data-act="start" title="Iniciar">▶</button><button class="tbtn done" data-act="finish" title="Terminar">✓</button><button class="tbtn del2" data-act="del">🗑</button>';
   const titleHtml=t.link?'<a class="title tlink" href="'+esc(t.link)+'" target="_blank" rel="noopener">'+esc(t.titulo)+'</a>':'<div class="title">'+esc(t.titulo)+'</div>';
   const recBadge=isWeekly(t)?'<span class="rec" data-act="editrec" title="Editar días de repetición">↻ '+t.dias_semana.map(d=>DOW[d]).join('·')+'</span>':'';
   const dueHtml=t.fecha_limite?'<span class="due2'+((t.fecha_limite<localDate()&&!done)?' late':'')+'" title="Fecha límite">📅 '+fmtDue(t.fecha_limite)+'</span>':'';
-  const respHtml=(t.responsable_id&&t.responsable_id!==(me&&me.id))?'<span class="rav" title="Responsable: '+esc(respName(t.responsable_id))+'">'+esc(respIni(t.responsable_id))+'</span>':'';
+  const respHtml=(t.responsable_email&&t.responsable_email!==(me&&me.email))?'<span class="rav" title="Responsable: '+esc(respName(t.responsable_email))+'">'+esc(respIni(t.responsable_email))+'</span>':'';
   const noteBtn='<button class="tbtn note'+(t.notas?' on':'')+'" data-act="notes" title="'+(t.notas?'Ver/editar notas':'Agregar notas')+'">📝</button>';
   div.innerHTML='<div class="body">'+titleHtml+'<div class="meta"><span class="tag">'+esc(p?p.nombre:'Sin proyecto')+'</span>'+recBadge+dueHtml+respHtml+'<span class="elapsed">'+fmt(taskSec(t))+'</span></div></div><div class="ctrls">'+noteBtn+ctrl+'</div>';
   div.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();const a=b.dataset.act;
     if(a==='start')startTask(t.id);else if(a==='pause')pauseTask();else if(a==='finish')finishTask(t.id);
-    else if(a==='del')delTask(t.id);else if(a==='openlink')window.open(t.link,'_blank');else if(a==='setlink')setTaskLink(t);else if(a==='editrec')openRecEdit(t);else if(a==='notes')editNotes(t);}));
+    else if(a==='del')delTask(t.id);else if(a==='openlink')window.open(t.link,'_blank');else if(a==='setlink')setTaskLink(t);else if(a==='editrec')openRecEdit(t);else if(a==='notes')editNotes(t);else if(a==='edit')openTaskEdit(t);}));
   return div;}
 function renderTasks(){const list=$("#taskList");list.innerHTML="";
   if(selProj){const p=proj(selProj);const b=document.createElement("div");b.className="projbanner";b.style.setProperty("--dom",(DOMAINS[(p||{}).dominio]||{}).color||'#57b083');
@@ -803,8 +810,9 @@ function renderTasks(){const list=$("#taskList");list.innerHTML="";
     b.querySelector('[data-a="clr"]').addEventListener('click',()=>{selProj=null;renderAll();});list.appendChild(b);}
   let show=tasks.slice();
   if(veTodo()){
-    if(viewAs==='__me') show=show.filter(t=>t.owner_id===(me&&me.id)||t.responsable_id===(me&&me.id));
-    else if(viewAs && viewAs.slice(0,2)==='u:'){const uid=viewAs.slice(2); show=show.filter(t=>t.owner_id===uid||t.responsable_id===uid);}
+    const meEmail=me&&me.email;
+    if(viewAs==='__me') show=show.filter(t=>t.owner_id===(me&&me.id)||t.responsable_email===meEmail);
+    else if(viewAs && viewAs.slice(0,2)==='e:'){const em=viewAs.slice(2);const u=roster.find(r=>r.email===em)||{};show=show.filter(t=>t.responsable_email===em||(u.id&&t.owner_id===u.id));}
   }
   if(selProj){const ids=descendantIds(selProj);show=show.filter(t=>ids.includes(t.project_id));}
   else{show=show.filter(t=>{const p=proj(t.project_id);return p&&!p.archivado;});if(filter!=='all')show=show.filter(t=>(proj(t.project_id)||{}).dominio===filter);}
@@ -913,11 +921,20 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').then(r=>{try{r&&r.update&&r.update();}catch(e){}}).catch(()=>{}));
 }
 // ===== SALA EN VIVO =====
-let team=[], incidents=[], curRoom=null, roomSub=null, sosSel=new Set(), sosSevVal='critico';
+let team=[], roster=[], incidents=[], curRoom=null, roomSub=null, sosSel=new Set(), sosSevVal='critico';
 const SEVS=[['critico','🔴 Crítico'],['urgente','🟠 Urgente'],['atencion','🟡 Atención'],['info','🔵 Info']];
 function sevColor(s){return ({critico:'var(--crit)',urgente:'#e08a4f',atencion:'var(--warn)',info:'#7aa2f7'})[s]||'var(--crit)';}
 function ini(n){return (n||'?').replace(/[<>]/g,'').split(/\s+/).map(x=>x[0]||'').slice(0,2).join('').toUpperCase();}
-async function loadTeam(){const{data}=await sb.from('cmo_user').select('id,nombre,email,rol');team=(data||[]).filter(u=>u.id!==(me&&me.id));}
+async function loadTeam(){
+  const [ru,rt]=await Promise.all([
+    sb.from('cmo_user').select('id,nombre,email,rol'),
+    sb.from('cmo_team').select('email,nombre,rol').eq('activo',true)
+  ]);
+  const us=ru.data||[], tm=rt.data||[];
+  const idByEmail={}; us.forEach(u=>{if(u.email)idByEmail[u.email]=u.id;});
+  roster=tm.map(t=>({email:t.email,nombre:t.nombre,rol:t.rol,id:idByEmail[t.email]||null}));
+  team=us.filter(u=>u.id!==(me&&me.id));
+}
 function openSos(){
   sosSel=new Set();sosSevVal='critico';$("#sosText").value='';$("#sosMsg").textContent='';
   $("#sosSev").innerHTML=SEVS.map(([k,l])=>'<button class="sevbtn'+(k==='critico'?' on':'')+'" data-sev="'+k+'"'+(k==='critico'?' style="background:'+sevColor(k)+';border-color:'+sevColor(k)+'"':'')+'>'+l+'</button>').join('');
@@ -985,13 +1002,13 @@ $("#rSend").addEventListener("click",sendRoomMsg);
 $("#rInput").addEventListener("keydown",e=>{if(e.key==='Enter')sendRoomMsg();});
 
 // ===== responsable / notas de tarea + módulo Notas =====
-function respName(id){return id===(me&&me.id)?'Yo':((team.find(u=>u.id===id)||{}).nombre||'—');}
-function respIni(id){return ini(respName(id));}
+function respName(email){if(!email)return '—';if(email===(me&&me.email))return 'Yo';const u=roster.find(r=>r.email===email);return u?(u.nombre||u.email):email;}
+function respIni(email){return ini(respName(email));}
 function fmtDue(d){try{return new Date(d+'T00:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short'});}catch(e){return d;}}
-function fillResp(){const s=$("#newResp");if(!s)return;const cur=s.value;
-  const opts=[{id:(me&&me.id),n:'Yo'}].concat(team.map(u=>({id:u.id,n:(u.nombre||u.email)})));
-  s.innerHTML=opts.filter(o=>o.id).map(o=>'<option value="'+o.id+'">'+esc(o.n)+'</option>').join('');
-  if(cur)s.value=cur;}
+function fillResp(){const s=$("#newResp");if(!s)return;const cur=s.value;const meEmail=me&&me.email;
+  const list=roster.slice().sort((a,b)=>a.email===meEmail?-1:b.email===meEmail?1:(a.nombre||'').localeCompare(b.nombre||''));
+  s.innerHTML='<option value="">— Sin asignar —</option>'+list.map(u=>'<option value="'+esc(u.email)+'">'+esc(u.email===meEmail?'Yo':(u.nombre||u.email))+'</option>').join('');
+  s.value=cur||meEmail||'';}
 async function editNotes(t){const n=prompt('Notas de «'+t.titulo+'»:', t.notas||'');if(n===null)return;
   await sb.from('cmo_task').update({notas:n.trim()||null}).eq('id',t.id);toast(n.trim()?'Notas guardadas':'Notas quitadas');await refresh();}
 let notas=[];
@@ -1014,23 +1031,17 @@ let viewAs='__me';
 function veTodo(){return me && (me.rol==='director' || me.rol==='gerente');}
 async function materializeSeed(){
   if(!me || me.funciones_sembradas) return;
-  const {data:seeds}=await sb.from('cmo_seed_task').select('*').eq('email',me.email).order('sort');
-  if(seeds && seeds.length){
-    const rows=seeds.map(s=>{
-      const cat=projects.find(p=>!p.owner_id && p.dominio===s.categoria) || projects.find(p=>!p.owner_id && p.dominio==='admin');
-      return { titulo:s.titulo, notas:s.notas||null, project_id:cat?cat.id:null, estado:'pendiente', responsable_id:s.es_juliana?null:me.id, sort:s.sort };
-    });
-    await sb.from('cmo_task').insert(rows);
-    toast('Se cargaron '+rows.length+' funciones a tu tablero');
-  }
+  // Las funciones ya vienen pre-cargadas y asignadas por correo; al 1er ingreso solo
+  // enlazamos tu id a las tareas de tu correo y marcamos el flag.
+  try{ await sb.from('cmo_task').update({responsable_id:me.id}).eq('responsable_email',me.email).is('responsable_id',null); }catch(e){}
   await sb.from('cmo_user').update({funciones_sembradas:true}).eq('id',me.id);
-  me.funciones_sembradas=true; await refresh();
+  me.funciones_sembradas=true;
 }
 function fillViewAs(){const rb=$("#resumenBtn");if(rb)rb.style.display=veTodo()?'':'none';
   const s=$("#viewAs");if(!s)return;
   if(!veTodo()){ s.style.display='none'; return; }
-  const cur=s.value||'__me';
-  const opts=[['__me','Ver: Yo'],['__all','Ver: Todos']].concat(team.map(u=>['u:'+u.id,'Ver: '+(u.nombre||u.email)]));
+  const cur=s.value||'__me';const meEmail=me&&me.email;
+  const opts=[['__me','Ver: Yo'],['__all','Ver: Todos']].concat(roster.filter(u=>u.email!==meEmail).map(u=>['e:'+u.email,'Ver: '+(u.nombre||u.email)]));
   s.innerHTML=opts.map(o=>'<option value="'+o[0]+'">'+esc(o[1])+'</option>').join('');
   s.value=cur; s.style.display='';
 }
@@ -1090,6 +1101,48 @@ async function loadResumen(){
 $("#resumenBtn").addEventListener("click",openResumen);
 $("#resumenClose").addEventListener("click",()=>$("#resumenModal").classList.add("hidden"));
 $("#resApply").addEventListener("click",()=>{resPeriod='rango';renderResChips();loadResumen();});
+
+// ===== Editar pendiente (responsable, categoría, repetir, fecha) =====
+let edId=null, edDays=[];
+const EDLBL='style="display:block;font-size:11px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em"';
+const EDIN='style="width:100%;background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit"';
+function openTaskEdit(t){
+  edId=t.id; edDays=Array.isArray(t.dias_semana)?t.dias_semana.slice():[];
+  const meEmail=me&&me.email;
+  const rlist=roster.slice().sort((a,b)=>a.email===meEmail?-1:b.email===meEmail?1:(a.nombre||'').localeCompare(b.nombre||''));
+  const respOpts='<option value="">— Sin asignar —</option>'+rlist.map(u=>'<option value="'+esc(u.email)+'"'+(t.responsable_email===u.email?' selected':'')+'>'+esc(u.email===meEmail?'Yo':(u.nombre||u.email))+'</option>').join('');
+  const catOpts=projects.filter(p=>!p.archivado&&!p.parent_id).map(p=>{
+    const subs=projects.filter(s=>!s.archivado&&s.parent_id===p.id);
+    return '<option value="'+p.id+'"'+(t.project_id===p.id?' selected':'')+'>'+esc(p.nombre)+'</option>'+
+      subs.map(s=>'<option value="'+s.id+'"'+(t.project_id===s.id?' selected':'')+'>— '+esc(s.nombre)+'</option>').join('');
+  }).join('');
+  const daysHtml=[1,2,3,4,5,6,7].map(d=>'<button type="button" class="daychip" data-d="'+d+'">'+DOW[d]+'</button>').join('');
+  $("#taskEditBody").innerHTML=
+    '<label '+EDLBL+'>Título</label><input id="edTitle" '+EDIN+' value="'+esc(t.titulo)+'">'+
+    '<label '+EDLBL+'>Responsable</label><select id="edResp" '+EDIN+'>'+respOpts+'</select>'+
+    '<label '+EDLBL+'>Categoría / Proyecto</label><select id="edCat" '+EDIN+'>'+catOpts+'</select>'+
+    '<label '+EDLBL+'>Fecha límite</label><input type="date" id="edDue" '+EDIN+' value="'+(t.fecha_limite||'')+'">'+
+    '<label '+EDLBL+'>Repetir en días (vacío = una sola vez)</label><div id="edDays" style="display:flex;gap:5px;flex-wrap:wrap">'+daysHtml+'</div>'+
+    '<div style="display:flex;gap:8px;margin-top:16px"><button class="primary" id="edSave" style="flex:1;margin:0">Guardar</button><button class="pbtn" id="edCancel">Cancelar</button></div>';
+  const paint=()=>$("#edDays").querySelectorAll('[data-d]').forEach(b=>b.classList.toggle('on',edDays.includes(+b.dataset.d)));
+  paint();
+  $("#edDays").querySelectorAll('[data-d]').forEach(b=>b.addEventListener('click',()=>{const d=+b.dataset.d;edDays=edDays.includes(d)?edDays.filter(x=>x!==d):edDays.concat(d);edDays.sort((a,b)=>a-b);paint();}));
+  $("#edCancel").addEventListener('click',()=>$("#taskModal").classList.add("hidden"));
+  $("#edSave").addEventListener('click',saveTaskEdit);
+  $("#taskModal").classList.remove("hidden");
+}
+async function saveTaskEdit(){
+  if(!edId)return;
+  const titulo=$("#edTitle").value.trim()||'(sin título)';
+  const responsable_email=$("#edResp").value||null;
+  const project_id=$("#edCat").value||null;
+  const due=$("#edDue").value||null;
+  const upd={titulo,responsable_email,project_id,fecha_limite:due,recurrencia:edDays.length?'semanal':'unica',dias_semana:edDays.length?edDays.slice():null};
+  const {error}=await sb.from('cmo_task').update(upd).eq('id',edId);
+  if(error){toast('No se pudo guardar');return;}
+  $("#taskModal").classList.add("hidden"); toast('Cambios guardados'); await refresh();
+}
+$("#taskClose").addEventListener("click",()=>$("#taskModal").classList.add("hidden"));
 
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
