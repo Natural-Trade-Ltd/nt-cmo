@@ -189,6 +189,10 @@
   .nslink .nsedit{margin-left:auto;border:none;background:transparent;color:var(--faint);cursor:pointer;font-size:12px;padding:3px 6px;border-radius:5px;flex:none}
   .nslink .nsedit:hover{background:var(--panel-3);color:var(--accent)}
   .nslink.nsadd{border-style:dashed;justify-content:center;color:var(--muted);font-family:inherit}
+  .agrow{display:flex;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border-soft);font-size:13px;align-items:baseline}
+  .agrow:last-child{border-bottom:none}
+  .agt{font-family:var(--mono);color:var(--accent);white-space:nowrap;flex:none;min-width:46px;font-size:12px}
+  .agttl{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .colarow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--border-soft)}
   .colarow:first-child{border-top:0}
   .colarow .cl{flex:1;font-size:12.5px;color:var(--ink)}
@@ -438,6 +442,10 @@
   </div>
 
   <div class="right">
+    <div class="panel" style="flex:none">
+      <header><span class="ic">📅</span><span class="h">Agenda de hoy</span><span class="count" id="agendaCount"></span></header>
+      <div class="scroll" id="agendaList" style="max-height:170px"></div>
+    </div>
     <div class="panel">
       <header><span class="ic">✉</span><span class="h">Correos por responder</span><span class="count" id="mailCount">0</span></header>
       <div class="scroll" id="mailList"></div>
@@ -607,7 +615,7 @@ function todayStartISO(){const d=new Date();d.setHours(0,0,0,0);return d.toISOSt
 function weekStartISO(){const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);d.setHours(0,0,0,0);return d.toISOString();}
 function localDate(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 
-let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null;
+let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null, meetings=[], calConnected=false;
 let active=null, filter="all", selProj=null, toastT, ticking=false, lastAct=Date.now();
 let newRecur=[], recEditTask=null;
 const DOW=['','L','M','M','J','V','S','D'];                     // ISO 1=lun..7=dom
@@ -784,15 +792,17 @@ $("#jBtn").addEventListener("click",async()=>{
 // ===== DATA =====
 async function refresh(){
   $("#app").classList.add("loading");
-  const[p,t,e,l,m,q]=await Promise.all([
+  const[p,t,e,l,m,q,mt,gk]=await Promise.all([
     sb.from('cmo_project').select('*').order('sort'),
     sb.from('cmo_task').select('*').order('sort'),
     sb.from('cmo_time_entry').select('*').eq('owner_id',me.id).or('ended_at.is.null,started_at.gte.'+weekStartISO()),
     sb.from('cmo_ns_link').select('*').order('sort'),
     sb.from('cmo_mail_alert').select('*').neq('status','done').order('received_at',{ascending:false}),
     sb.from('cmo_ns_metric').select('*').order('orden'),
+    sb.from('cmo_meeting').select('*').eq('owner_id',me.id).eq('fecha',localDate()).order('inicio'),
+    sb.from('cmo_google_token').select('owner_id').eq('owner_id',me.id).maybeSingle(),
   ]);
-  projects=p.data||[]; tasks=t.data||[]; entries=e.data||[]; links=l.data||[]; mails=m.data||[]; nsm=q.data||[];
+  projects=p.data||[]; tasks=t.data||[]; entries=e.data||[]; links=l.data||[]; mails=m.data||[]; nsm=q.data||[]; meetings=mt.data||[]; calConnected=!!(gk&&gk.data);
   active=entries.find(x=>!x.ended_at)||null;
   $("#app").classList.remove("loading"); renderAll();
 }
@@ -996,7 +1006,14 @@ function renderNowSelect(){const sel=$("#newProj");const cur=sel.value;sel.inner
   if(selProj&&projects.some(p=>p.id===selProj))sel.value=selProj;else if(cur&&cur!=='__new__')sel.value=cur;}
 function paintOtros(){const on=active&&active.kind==='otros';const ob=$("#otrosBtn");ob.classList.toggle("active",on);ob.setAttribute("aria-pressed",on?"true":"false");
   $("#oTxt").textContent=on?"EN OTROS…":"OTROS";$("#oIcon").textContent=on?"■":"◉";}
-function renderAll(){renderNowSelect();fillResp();fillViewAs();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
+function renderAll(){renderNowSelect();fillResp();fillViewAs();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderAgenda();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
+function fmtEventTime(ini){ if(!ini)return''; if(!(''+ini).includes('T'))return 'Todo el día';
+  try{ return new Date(ini).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} }
+function renderAgenda(){const el=$("#agendaList");if(!el)return;
+  $("#agendaCount").textContent=meetings.length||'';
+  if(meetings.length){ el.innerHTML=meetings.map(m=>'<div class="agrow"><span class="agt">'+fmtEventTime(m.inicio)+'</span><span class="agttl">'+esc(m.titulo||'(sin título)')+'</span></div>').join(''); }
+  else if(calConnected){ el.innerHTML='<div class="empty" style="padding:12px 8px">Sin juntas hoy 🎉</div>'; }
+  else { el.innerHTML='<div class="empty" style="padding:12px 8px">Conecta tu Google Calendar en ⚙ para ver tus juntas del día.</div>'; }}
 
 // ===== MÓDULOS =====
 function applyMods(mods){document.body.classList.toggle("off-jornada",!mods.includes("jornada"));
