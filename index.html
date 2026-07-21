@@ -744,14 +744,14 @@ async function enterApp(session){
 
 // ===== JORNADA =====
 async function jornadaOpen(){
-  const f=localDate();
-  // auto-cerrar jornadas de días anteriores que quedaron abiertas (olvidaron terminar / cerraron la PC)
-  try{ const{data:prev}=await sb.from('cmo_attendance').select('id,entrada,last_beat').is('salida',null).neq('fecha',f);
+  const f=localDate(); const uid=me&&me.id;
+  // auto-cerrar MIS jornadas de días anteriores que quedaron abiertas (olvidé terminar / cerré la PC)
+  try{ const{data:prev}=await sb.from('cmo_attendance').select('id,entrada,last_beat').eq('owner_id',uid).is('salida',null).neq('fecha',f);
     for(const r of (prev||[])) await sb.from('cmo_attendance').update({salida:r.last_beat||r.entrada,origen_salida:'auto_prev'}).eq('id',r.id);
   }catch(e){}
-  const{data}=await sb.from('cmo_attendance').select('*').eq('fecha',f).maybeSingle();
+  const{data}=await sb.from('cmo_attendance').select('*').eq('owner_id',uid).eq('fecha',f).maybeSingle();
   if(!data){ const{data:ins}=await sb.from('cmo_attendance').insert({fecha:f,entrada:nowISO(),last_beat:nowISO(),origen_entrada:'app_open'}).select().maybeSingle();
-    att=ins||((await sb.from('cmo_attendance').select('*').eq('fecha',f).maybeSingle()).data); }
+    att=ins||((await sb.from('cmo_attendance').select('*').eq('owner_id',uid).eq('fecha',f).maybeSingle()).data); }
   else { att=data; await sb.from('cmo_attendance').update({last_beat:nowISO()}).eq('id',data.id); }
   paintJornada();
 }
@@ -787,7 +787,7 @@ async function refresh(){
   const[p,t,e,l,m,q]=await Promise.all([
     sb.from('cmo_project').select('*').order('sort'),
     sb.from('cmo_task').select('*').order('sort'),
-    sb.from('cmo_time_entry').select('*').or('ended_at.is.null,started_at.gte.'+weekStartISO()),
+    sb.from('cmo_time_entry').select('*').eq('owner_id',me.id).or('ended_at.is.null,started_at.gte.'+weekStartISO()),
     sb.from('cmo_ns_link').select('*').order('sort'),
     sb.from('cmo_mail_alert').select('*').neq('status','done').order('received_at',{ascending:false}),
     sb.from('cmo_ns_metric').select('*').order('orden'),
@@ -873,7 +873,7 @@ function renderClock(){const d=new Date();
   $("#date").textContent=d.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});}
 function tick(){renderClock();renderNow();refreshLive();jClock();}
 function renderTopStats(){$("#topWork").textContent=fmtHM(totalWorkToday());$("#topOtros").textContent=fmtHM(otrosSecToday());
-  const pend=tasks.filter(t=>isPendingNow(t)&&!t.parent_task_id).length;$("#topPend").textContent=pend;$("#pendCount").textContent=pend+" activas";}
+  const meEmail=me&&me.email;const pend=tasks.filter(t=>!t.parent_task_id&&(t.owner_id===(me&&me.id)||t.responsable_email===meEmail)&&isPendingNow(t)).length;$("#topPend").textContent=pend;$("#pendCount").textContent=pend+" activas";}
 function renderNow(){const pill=$("#nowpill"),txt=$("#nowTxt"),tt=$("#nowT");pill.className="nowpill";
   if(active&&active.kind==='task'){const tk=tasks.find(x=>x.id===active.task_id);pill.classList.add("run");txt.textContent=tk?tk.titulo:active.label;tt.textContent=fmt(taskSec({id:active.task_id}));}
   else if(active&&active.kind==='otros'){pill.classList.add("otros");txt.textContent="OTROS (no planeado)";tt.textContent=fmt(otrosSecToday());}
