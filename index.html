@@ -1043,7 +1043,7 @@ function fillViewAs(){const rb=$("#resumenBtn");if(rb)rb.style.display=veTodo()?
   const cur=s.value||'__me';const meEmail=me&&me.email;
   const opts=[['__me','Ver: Yo'],['__all','Ver: Todos']].concat(roster.filter(u=>u.email!==meEmail).map(u=>['e:'+u.email,'Ver: '+(u.nombre||u.email)]));
   s.innerHTML=opts.map(o=>'<option value="'+o[0]+'">'+esc(o[1])+'</option>').join('');
-  s.value=cur; s.style.display='';
+  s.value=cur; s.style.display='inline-block';
 }
 $("#viewAs").addEventListener("change",e=>{viewAs=e.target.value;renderTasks();});
 
