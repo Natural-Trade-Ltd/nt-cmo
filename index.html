@@ -459,7 +459,11 @@
     <div class="daytotal"><div class="dv" id="dayTotal">0.0h</div><div class="dl">Registrado hoy</div><div class="prod" id="prodPct">—</div></div>
   </div>
 
-  <div id="modmenu" class="hidden"><h4>Módulos activos</h4><div id="modList"></div></div>
+  <div id="modmenu" class="hidden"><h4>Módulos activos</h4><div id="modList"></div>
+    <h4 style="margin-top:12px">Integraciones</h4>
+    <button class="modchk" id="calBtn" style="width:100%;cursor:pointer;justify-content:flex-start;gap:7px">📅 <span id="calBtnTxt">Conectar Google Calendar</span></button>
+    <p class="s" id="calHint" style="font-size:10.5px;margin:6px 0 0;text-align:left;color:var(--faint)">Apruebas tu cuenta una vez y tus juntas aparecen solas en tu jornada.</p>
+  </div>
 </div>
 
 <!-- ===== NUEVA CATEGORÍA / SUBCATEGORÍA ===== -->
@@ -626,6 +630,22 @@ $("#googleBtn").addEventListener("click",async()=>{
   const{error}=await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo,queryParams:{prompt:'select_account'}}});
   if(error)gmsg(error.message,"err");   // el gate por correo (cmo_team) valida quién entra al volver
 });
+async function connectCalendar(){
+  toast('Abriendo Google para aprobar tu calendario…');
+  const redirectTo=location.href.split('#')[0].split('?')[0];
+  const{error}=await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo,scopes:'https://www.googleapis.com/auth/calendar.readonly',queryParams:{access_type:'offline',prompt:'consent'}}});
+  if(error)toast(error.message);
+}
+async function captureGoogleToken(session){
+  try{ const rt=session&&session.provider_refresh_token; if(!rt)return;
+    await sb.from('cmo_google_token').upsert({owner_id:session.user.id,refresh_token:rt,scope:'calendar.readonly',email:session.user.email,updated_at:new Date().toISOString()});
+  }catch(e){}
+}
+async function refreshCalStatus(){ if(!me)return;
+  try{ const{data}=await sb.from('cmo_google_token').select('owner_id').eq('owner_id',me.id).maybeSingle();
+    const t=$("#calBtnTxt"); if(t)t.textContent=data?'Google Calendar conectado ✓ (reconectar)':'Conectar Google Calendar';
+  }catch(e){}
+}
 $("#sendBtn").addEventListener("click",async()=>{const email=$("#gemail").value.trim();if(!email)return;
   $("#sendBtn").disabled=true;gmsg("Enviando…");
   const{error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.href.split('#')[0],shouldCreateUser:true}});
@@ -646,7 +666,7 @@ $("#linkBtn").addEventListener("click",async()=>{const raw=$("#glink").value.tri
   }catch(e){gmsg("No pude leer esa dirección.","err");$("#linkBtn").disabled=false;}});
 $("#signout").addEventListener("click",async()=>{await jornadaClose('manual').catch(()=>{});await sb.auth.signOut();location.reload();});
 
-sb.auth.onAuthStateChange((_e,session)=>{ if(session&&session.user) route(session); });
+sb.auth.onAuthStateChange((_e,session)=>{ if(session&&session.user){ captureGoogleToken(session); route(session); } });
 (async()=>{const{data}=await sb.auth.getSession();if(data.session)route(data.session);})();
 
 async function route(session){
@@ -963,7 +983,8 @@ function renderModMenu(){const box=$("#modList");box.innerHTML="";const cur=(me&
       if(e.target.checked){if(!mods.includes(k))mods.push(k);}else mods=mods.filter(x=>x!==k);
       me.modulos=mods;d.classList.toggle("on",e.target.checked);applyMods(mods);
       await sb.from('cmo_user').update({modulos:mods}).eq('id',me.id);});box.appendChild(d);});}
-$("#modBtn").addEventListener("click",()=>{const m=$("#modmenu");m.classList.toggle("hidden");if(!m.classList.contains("hidden"))renderModMenu();});
+$("#modBtn").addEventListener("click",()=>{const m=$("#modmenu");m.classList.toggle("hidden");if(!m.classList.contains("hidden")){renderModMenu();refreshCalStatus();}});
+$("#calBtn").addEventListener("click",connectCalendar);
 document.addEventListener("click",e=>{if(!e.target.closest("#modmenu")&&!e.target.closest("#modBtn"))$("#modmenu").classList.add("hidden");});
 
 // ===== listeners =====
