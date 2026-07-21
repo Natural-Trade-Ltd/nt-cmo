@@ -96,6 +96,10 @@
   .jor b{font-weight:700}
   .jor .jm{color:var(--muted);font-size:12px}
   .jor .jclock{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700}
+  :root.light .jor{background:linear-gradient(180deg,#eaf3ec,#dcece2);border-color:#cbe0d2;color:#152018}
+  :root.light .jor .jm{color:#51655a}
+  :root.light .jor .jclock{color:#2c6b49}
+  :root.light .jbtn{background:#fff;color:#2c6b49;border-color:#cbe0d2}
   .jbtn{margin-left:auto;border:1px solid var(--border);background:var(--panel-3);color:var(--muted);border-radius:7px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600}
   .jbtn:hover{border-color:var(--crit);color:var(--crit)}
   .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);
@@ -181,6 +185,10 @@
   .nslink:hover{border-color:var(--accent);color:var(--accent)}.nslink.unset{opacity:.6;border-style:dashed}
   .nslink .nsic{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;background:#16221b60;font-size:14px;flex:none}
   .nslink .arw{margin-left:auto;color:var(--faint);font-size:12px}
+  .nslink .nslbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nslink .nsedit{margin-left:auto;border:none;background:transparent;color:var(--faint);cursor:pointer;font-size:12px;padding:3px 6px;border-radius:5px;flex:none}
+  .nslink .nsedit:hover{background:var(--panel-3);color:var(--accent)}
+  .nslink.nsadd{border-style:dashed;justify-content:center;color:var(--muted);font-family:inherit}
   .colarow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--border-soft)}
   .colarow:first-child{border-top:0}
   .colarow .cl{flex:1;font-size:12.5px;color:var(--ink)}
@@ -234,7 +242,7 @@
   .subchip b{color:var(--ink);font-family:var(--mono)}
   #gate,#onboard,#catModal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:auto;padding:20px;
     background:radial-gradient(900px 500px at 50% 0%, #15241c 0%, transparent 60%), var(--bg)}
-  #sosModal,#roomModal,#notasModal,#resumenModal,#taskModal{position:fixed;inset:0;z-index:110;display:grid;place-items:center;overflow:auto;padding:20px;background:rgba(6,12,9,.72)}
+  #sosModal,#roomModal,#notasModal,#resumenModal,#taskModal,#nsModal{position:fixed;inset:0;z-index:110;display:grid;place-items:center;overflow:auto;padding:20px;background:rgba(6,12,9,.72)}
   .card{width:400px;max-width:94vw;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);border-radius:14px;padding:26px 24px;box-shadow:0 30px 80px -30px #000}
   .card .logo{margin:0 auto 12px;width:44px;height:44px;font-size:15px}
   .card h2{margin:0 0 4px;text-align:center;font-size:18px}
@@ -540,6 +548,20 @@
     <div id="taskEditBody"></div>
   </div>
 </div>
+<div id="nsModal" class="hidden">
+  <div class="card modalbig">
+    <div class="rhead"><h2 style="flex:1" id="nsTitle">Editar acceso</h2><button class="pbtn" id="nsClose">✕</button></div>
+    <label>Nombre</label><input id="nsName" placeholder="Ej. Aprobar Bills" autocomplete="off">
+    <label>Link de NetSuite (URL)</label><input id="nsUrl" placeholder="https://…" autocomplete="off">
+    <label>Ícono (1 emoji, opcional)</label><input id="nsIcon" maxlength="2" placeholder="↗" autocomplete="off">
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="primary" id="nsSave" style="flex:1;margin:0">Guardar</button>
+      <button class="sec" id="nsUp" title="Subir en la lista" style="width:auto;padding:11px 14px">↑</button>
+      <button class="sec" id="nsDown" title="Bajar en la lista" style="width:auto;padding:11px 14px">↓</button>
+      <button class="sec" id="nsDel" title="Eliminar" style="width:auto;padding:11px 14px;color:#e17a6e">🗑</button>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script type="module">
@@ -572,7 +594,6 @@ const STARTER_NS=[
   {label:"Portal compras",icon:"▦",url:"#",sort:30},
   {label:"Rastreo",icon:"◎",url:"#",sort:40},
   {label:"Facturación",icon:"▣",url:"#",sort:50},
-  {label:"Agregar acceso",icon:"＋",url:"#",sort:60},
 ];
 
 const $=s=>document.querySelector(s);
@@ -941,10 +962,16 @@ function renderMail(){const list=$("#mailList");list.innerHTML="";
     d.addEventListener("click",()=>{if(m.link)window.open(m.link,'_blank');if(m.status==='unread')markMail(m);});list.appendChild(d);});
   $("#mailCount").textContent=mails.length;}
 function renderNS(){const g=$("#nsGrid");g.innerHTML="";
-  links.forEach(l=>{const a=document.createElement("a");a.className="nslink"+(l.url==='#'?" unset":"");a.title=l.url==='#'?"Clic para configurar":("Abrir "+l.label);
-    a.innerHTML='<span class="nsic">'+(l.icon||'↗')+'</span>'+esc(l.label)+'<span class="arw">'+(l.url==='#'?'✎':'↗')+'</span>';
-    a.addEventListener("click",e=>{e.preventDefault();if(l.url&&l.url!=='#')window.open(l.url,'_blank');else setLinkUrl(l);});
-    a.addEventListener("contextmenu",e=>{e.preventDefault();setLinkUrl(l);});g.appendChild(a);});}
+  links.slice().sort((a,b)=>(a.sort||0)-(b.sort||0)).forEach(l=>{
+    const d=document.createElement("div");d.className="nslink"+((!l.url||l.url==='#')?" unset":"");
+    d.title=(l.url&&l.url!=='#')?("Abrir "+l.label):"Sin URL — toca ✎ para configurar";
+    d.innerHTML='<span class="nsic">'+(l.icon||'↗')+'</span><span class="nslbl">'+esc(l.label)+'</span><button class="nsedit" data-a="edit" title="Editar / mover / borrar">✎</button>';
+    d.addEventListener("click",e=>{ if(e.target.closest('[data-a="edit"]')){openNsEdit(l);return;} if(l.url&&l.url!=='#')window.open(l.url,'_blank'); else openNsEdit(l); });
+    g.appendChild(d);
+  });
+  const add=document.createElement("button");add.className="nslink nsadd";add.type="button";
+  add.innerHTML='<span class="nsic">＋</span><span class="nslbl">Agregar acceso</span>';
+  add.addEventListener("click",()=>openNsEdit(null));g.appendChild(add);}
 function renderColas(){const el=$("#colasList");if(!el)return;
   if(!nsm.length){el.innerHTML='<div class="empty" style="padding:14px 10px">Sin colas aún.</div>';$("#colasWhen").textContent='';return;}
   el.innerHTML=nsm.map(x=>'<div class="colarow"><span class="cl">'+esc(x.etiqueta)+'</span><span class="cn">'+x.conteo+'</span></div>').join('');
@@ -1230,6 +1257,41 @@ async function saveTaskEdit(){
   $("#taskModal").classList.add("hidden"); toast('Cambios guardados'); await refresh();
 }
 $("#taskClose").addEventListener("click",()=>$("#taskModal").classList.add("hidden"));
+
+// ===== Accesos NetSuite (editar / agregar / mover / borrar) =====
+let nsId=null;
+function openNsEdit(l){
+  nsId=l?l.id:null;
+  $("#nsTitle").textContent=l?'Editar acceso':'Nuevo acceso';
+  $("#nsName").value=l?(l.label||''):'';
+  $("#nsUrl").value=(l&&l.url&&l.url!=='#')?l.url:'';
+  $("#nsIcon").value=l?(l.icon||''):'';
+  const show=l?'':'none';
+  $("#nsUp").style.display=show;$("#nsDown").style.display=show;$("#nsDel").style.display=show;
+  $("#nsModal").classList.remove("hidden");setTimeout(()=>$("#nsName").focus(),30);
+}
+async function saveNs(){
+  const label=$("#nsName").value.trim(); if(!label){toast('Ponle un nombre');return;}
+  const url=$("#nsUrl").value.trim()||'#'; const icon=$("#nsIcon").value.trim()||'↗';
+  if(nsId){ await sb.from('cmo_ns_link').update({label,url,icon}).eq('id',nsId); }
+  else { const mx=links.reduce((m,x)=>Math.max(m,x.sort||0),0); await sb.from('cmo_ns_link').insert({label,url,icon,sort:mx+10}); }
+  $("#nsModal").classList.add("hidden"); toast('Acceso guardado'); await refresh();
+}
+async function delNs(){ if(!nsId)return; if(!confirm('¿Eliminar este acceso?'))return;
+  await sb.from('cmo_ns_link').delete().eq('id',nsId); $("#nsModal").classList.add("hidden"); toast('Acceso eliminado'); await refresh(); }
+async function moveNs(dir){ if(!nsId)return;
+  const s=links.slice().sort((a,b)=>(a.sort||0)-(b.sort||0));
+  const i=s.findIndex(x=>x.id===nsId), j=i+dir; if(i<0||j<0||j>=s.length)return;
+  const A=s[i], B=s[j], sA=A.sort||0, sB=B.sort||0;
+  await sb.from('cmo_ns_link').update({sort:sB}).eq('id',A.id);
+  await sb.from('cmo_ns_link').update({sort:sA}).eq('id',B.id);
+  await refresh(); openNsEdit(links.find(x=>x.id===nsId));
+}
+$("#nsClose").addEventListener("click",()=>$("#nsModal").classList.add("hidden"));
+$("#nsSave").addEventListener("click",saveNs);
+$("#nsDel").addEventListener("click",delNs);
+$("#nsUp").addEventListener("click",()=>moveNs(-1));
+$("#nsDown").addEventListener("click",()=>moveNs(1));
 
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
