@@ -376,6 +376,7 @@
     <div class="stat"><span class="k">Pendientes</span><span class="v" id="topPend">0</span></div>
     <div class="stat" style="border-right:1px solid var(--border-soft)"><span class="clock" id="clock">--:--:--</span><span class="date" id="date"></span></div>
     <select id="viewAs" class="viewsel" title="Ver tareas de (equipo)"></select>
+    <button class="iconbtn" id="resumenBtn" title="Resumen de tiempos del equipo" style="display:none">📊</button>
     <button class="iconbtn" id="notasBtn" title="Notas (comentarios libres)">📝</button>
     <button class="iconbtn sos" id="sosBtn" title="Pedir apoyo al equipo (En vivo)">📣</button>
     <button class="iconbtn" id="modBtn" title="Módulos activos">⚙</button>
@@ -495,6 +496,22 @@
     <p class="s" style="text-align:left;margin:-4px 0 6px">Comentarios libres — sin fecha ni responsable. Conviértelos en tarea cuando quieras.</p>
     <div class="rinput"><input id="notaInput" placeholder="Escribe una nota…" autocomplete="off"><button class="primary" style="width:auto;margin:0;padding:10px 16px" id="notaAdd">Agregar</button></div>
     <div class="notaslist" id="notasList"></div>
+  </div>
+</div>
+<div id="resumenModal" class="hidden">
+  <div class="card modalbig">
+    <div class="rhead"><h2 style="flex:1">📊 Resumen de tiempos</h2><button class="pbtn" id="resumenClose">✕</button></div>
+    <p class="s" style="text-align:left;margin:-4px 0 8px">Tiempo registrado por cada persona (bitácora). Suma los intervalos del cronómetro por tarea; <b>OTROS</b> = tiempo no planeado. El cronómetro en curso se cuenta en vivo.</p>
+    <div id="resChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"></div>
+    <div id="resRange" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--muted)">
+      <span>Del</span>
+      <input type="date" id="resFrom" style="background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:12px">
+      <span>al</span>
+      <input type="date" id="resTo" style="background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:6px;padding:4px 6px;font-size:12px">
+      <button class="pbtn" id="resApply">Aplicar</button>
+    </div>
+    <div id="resSummary" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+    <div id="resBody"></div>
   </div>
 </div>
 <div id="toast"></div>
@@ -1009,7 +1026,8 @@ async function materializeSeed(){
   await sb.from('cmo_user').update({funciones_sembradas:true}).eq('id',me.id);
   me.funciones_sembradas=true; await refresh();
 }
-function fillViewAs(){const s=$("#viewAs");if(!s)return;
+function fillViewAs(){const rb=$("#resumenBtn");if(rb)rb.style.display=veTodo()?'':'none';
+  const s=$("#viewAs");if(!s)return;
   if(!veTodo()){ s.style.display='none'; return; }
   const cur=s.value||'__me';
   const opts=[['__me','Ver: Yo'],['__all','Ver: Todos']].concat(team.map(u=>['u:'+u.id,'Ver: '+(u.nombre||u.email)]));
@@ -1017,6 +1035,61 @@ function fillViewAs(){const s=$("#viewAs");if(!s)return;
   s.value=cur; s.style.display='';
 }
 $("#viewAs").addEventListener("change",e=>{viewAs=e.target.value;renderTasks();});
+
+// ===== Resumen de tiempos (solo director / gerente) =====
+function monthStartISO(){const d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.toISOString();}
+let resPeriod='semana';
+const RES_PERIODS=[['hoy','Hoy'],['semana','Esta semana'],['mes','Este mes'],['rango','Rango…']];
+function resStartISO(){
+  if(resPeriod==='hoy')return todayStartISO();
+  if(resPeriod==='mes')return monthStartISO();
+  if(resPeriod==='rango'){const f=$("#resFrom").value;if(f)return new Date(f+'T00:00:00').toISOString();return weekStartISO();}
+  return weekStartISO();
+}
+function resEndISO(){
+  if(resPeriod==='rango'){const t=$("#resTo").value;if(t){const d=new Date(t+'T00:00:00');d.setDate(d.getDate()+1);return d.toISOString();}}
+  return null;
+}
+function renderResChips(){const c=$("#resChips");if(!c)return;
+  c.innerHTML=RES_PERIODS.map(p=>'<button class="chip'+(resPeriod===p[0]?' on':'')+'" data-p="'+p[0]+'">'+p[1]+'</button>').join('');
+  c.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>{resPeriod=b.dataset.p;renderResChips();loadResumen();}));
+  $("#resRange").style.display=resPeriod==='rango'?'flex':'none';
+}
+async function openResumen(){$("#resumenModal").classList.remove("hidden");renderResChips();await loadResumen();}
+async function loadResumen(){
+  const body=$("#resBody");if(!body)return;body.innerHTML='<div class="empty">Cargando…</div>';
+  let q=sb.from('cmo_time_entry').select('owner_id,project_id,kind,seconds,started_at,ended_at').gte('started_at',resStartISO());
+  const end=resEndISO();if(end)q=q.lt('started_at',end);
+  const {data,error}=await q;
+  if(error){body.innerHTML='<div class="empty">No se pudo cargar el resumen.</div>';return;}
+  const now=Date.now();
+  const nameMap={};[me].concat(team).forEach(u=>{if(u)nameMap[u.id]=u.nombre||u.email;});
+  const byOwner={};
+  (data||[]).forEach(en=>{
+    const sec=en.ended_at?(en.seconds||0):Math.max(0,(now-new Date(en.started_at).getTime())/1000);
+    const o=byOwner[en.owner_id]||(byOwner[en.owner_id]={total:0,otros:0,cats:{}});
+    o.total+=sec;
+    if(en.kind==='otros')o.otros+=sec;
+    else{const p=proj(en.project_id);const dom=p?p.dominio:'personal';o.cats[dom]=(o.cats[dom]||0)+sec;}
+  });
+  const rows=Object.keys(byOwner).map(id=>Object.assign({id,name:nameMap[id]||'—'},byOwner[id])).sort((a,b)=>b.total-a.total);
+  const grand=rows.reduce((a,r)=>a+r.total,0);
+  $("#resSummary").innerHTML=rows.length?('<b style="color:var(--ink)">'+fmtH(grand)+'</b> en total · '+rows.length+' persona(s) con actividad'):'';
+  if(!rows.length){body.innerHTML='<div class="empty">Sin tiempo registrado en este período.</div>';return;}
+  const max=Math.max.apply(null,rows.map(r=>r.total).concat([1]));
+  body.innerHTML=rows.map(r=>{
+    const cats=Object.keys(r.cats).sort((a,b)=>r.cats[b]-r.cats[a]).map(d=>{const dm=DOMAINS[d]||{name:d,color:'#9aa7b8'};return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);margin:0 10px 3px 0"><i style="width:8px;height:8px;border-radius:2px;background:'+dm.color+';display:inline-block"></i>'+esc(dm.name)+' '+fmtH(r.cats[d])+'</span>';});
+    if(r.otros>0)cats.push('<span style="font-size:11px;color:var(--warn);margin:0 10px 3px 0">◉ OTROS '+fmtH(r.otros)+'</span>');
+    const pct=Math.round(100*r.total/max);
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border-soft)">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px"><b style="color:var(--ink)">'+esc(r.name)+'</b><span style="font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700">'+fmtH(r.total)+'</span></div>'+
+      '<div style="height:8px;border-radius:5px;background:var(--panel-3);overflow:hidden;margin-bottom:6px"><div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,#57b083,#2c6b49)"></div></div>'+
+      '<div>'+cats.join('')+'</div></div>';
+  }).join('');
+}
+$("#resumenBtn").addEventListener("click",openResumen);
+$("#resumenClose").addEventListener("click",()=>$("#resumenModal").classList.add("hidden"));
+$("#resApply").addEventListener("click",()=>{resPeriod='rango';renderResChips();loadResumen();});
 
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
