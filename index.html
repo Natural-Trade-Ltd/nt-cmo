@@ -750,7 +750,8 @@ async function jornadaOpen(){
     for(const r of (prev||[])) await sb.from('cmo_attendance').update({salida:r.last_beat||r.entrada,origen_salida:'auto_prev'}).eq('id',r.id);
   }catch(e){}
   const{data}=await sb.from('cmo_attendance').select('*').eq('fecha',f).maybeSingle();
-  if(!data){ const{data:ins}=await sb.from('cmo_attendance').insert({fecha:f,entrada:nowISO(),last_beat:nowISO(),origen_entrada:'app_open'}).select().single(); att=ins; }
+  if(!data){ const{data:ins}=await sb.from('cmo_attendance').insert({fecha:f,entrada:nowISO(),last_beat:nowISO(),origen_entrada:'app_open'}).select().maybeSingle();
+    att=ins||((await sb.from('cmo_attendance').select('*').eq('fecha',f).maybeSingle()).data); }
   else { att=data; await sb.from('cmo_attendance').update({last_beat:nowISO()}).eq('id',data.id); }
   paintJornada();
 }
