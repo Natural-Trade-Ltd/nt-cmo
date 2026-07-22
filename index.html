@@ -135,6 +135,11 @@
   .task.sub::before{content:"↳";position:absolute;left:-15px;top:8px;color:var(--faint);font-size:13px}
   .task.waiting{border-color:#8a6a2a;background:#241c0e;box-shadow:inset 3px 0 0 #e0b25b}
   :root.light .task.waiting{background:#fbf3df}
+  .task.paused{border-color:#6c5f37;background:#191710;box-shadow:inset 3px 0 0 #cdb26a}
+  :root.light .task.paused{background:#f6f0dd;border-color:#d8c88f}
+  .task.paused .elapsed{color:#cdb26a}
+  .parbadge{font-size:10px;font-weight:700;color:#8fb4ff;background:rgba(120,150,220,.14);border:1px solid rgba(120,150,220,.32);padding:1px 7px;border-radius:999px;cursor:pointer}
+  .pausebadge{font-size:10px;font-weight:700;color:#cdb26a;background:rgba(205,178,106,.14);border:1px solid rgba(205,178,106,.3);padding:1px 7px;border-radius:999px}
   .task.waiting .title{color:#c79433}
   .subcount{font-size:10px;padding:2px 7px;border-radius:999px;background:#16241c;color:var(--good);border:1px solid var(--good-dim);white-space:nowrap}
   .espbadge{font-size:10px;padding:2px 7px;border-radius:999px;background:#2a2110;color:#e0b25b;border:1px solid #5a4620;font-family:var(--mono);white-space:nowrap}
@@ -858,17 +863,23 @@ async function refresh(){
     sb.from('cmo_google_token').select('owner_id').eq('owner_id',me.id).maybeSingle(),
   ]);
   projects=p.data||[]; tasks=t.data||[]; entries=e.data||[]; links=l.data||[]; mails=m.data||[]; nsm=q.data||[]; meetings=mt.data||[]; calConnected=!!(gk&&gk.data);
-  active=entries.find(x=>!x.ended_at)||null;
+  active=focusedEntry();
   $("#app").classList.remove("loading"); renderAll();
 }
 const proj=id=>projects.find(p=>p.id===id);
 function closedSecToday(pid){const ts=todayStartISO();return entries.filter(x=>x.ended_at&&x.kind==='task'&&x.project_id===pid&&x.started_at>=ts).reduce((a,x)=>a+(x.seconds||0),0);}
 function closedOtrosToday(){const ts=todayStartISO();return entries.filter(x=>x.ended_at&&x.kind==='otros'&&x.started_at>=ts).reduce((a,x)=>a+(x.seconds||0),0);}
-function liveDelta(){return active?Math.max(0,(Date.now()-new Date(active.started_at).getTime())/1000):0;}
-function projSecToday(p){let s=closedSecToday(p.id);if(active&&active.kind==='task'&&active.project_id===p.id)s+=liveDelta();return s;}
-function otrosSecToday(){let s=closedOtrosToday();if(active&&active.kind==='otros')s+=liveDelta();return s;}
+// ===== MULTI-CRONO: puede haber varias entradas abiertas a la vez =====
+function liveOf(e){return e&&!e.ended_at?Math.max(0,(Date.now()-new Date(e.started_at).getTime())/1000):0;}
+function openTaskEntry(id){return entries.find(e=>!e.ended_at&&e.kind==='task'&&e.task_id===id)||null;}
+function otrosOpen(){return entries.find(e=>!e.ended_at&&e.kind==='otros')||null;}
+function isPar(id){return !!(tasks.find(t=>t.id===id)||{}).paralelo;}
+function focusedEntry(){const oo=otrosOpen();if(oo)return oo;const n=entries.find(e=>!e.ended_at&&e.kind==='task'&&!isPar(e.task_id));if(n)return n;return entries.find(e=>!e.ended_at)||null;}
+function liveDelta(){return liveOf(active);}
+function projSecToday(p){let s=closedSecToday(p.id);entries.forEach(e=>{if(!e.ended_at&&e.kind==='task'&&e.project_id===p.id)s+=liveOf(e);});return s;}
+function otrosSecToday(){return closedOtrosToday()+liveOf(otrosOpen());}
 function taskSec(t){let s=entries.filter(x=>x.ended_at&&x.kind==='task'&&x.task_id===t.id).reduce((a,x)=>a+(x.seconds||0),0);
-  if(active&&active.kind==='task'&&active.task_id===t.id)s+=liveDelta();
+  s+=liveOf(openTaskEntry(t.id));
   tasks.forEach(c=>{if(c.parent_task_id===t.id)s+=taskSec(c);});return s;}
 function kidsOf(id){return tasks.filter(c=>c.parent_task_id===id);}
 function isCompleted(t){return isWeekly(t)?doneToday(t):(t.estado==='completada');}
@@ -878,39 +889,50 @@ function fmtDur(sec){sec=Math.max(0,Math.floor(sec));const d=Math.floor(sec/8640
 function totalWorkToday(){return projects.reduce((a,p)=>a+projSecToday(p),0);}
 
 // ===== ACTIONS =====
-async function closeActive(revert='pendiente'){ if(!active)return; const id=active.id,wt=active.task_id;
-  await sb.from('cmo_time_entry').update({ended_at:nowISO()}).eq('id',id);
-  if(wt&&revert)await sb.from('cmo_task').update({estado:revert}).eq('id',wt); active=null; }
+async function endEntry(e){ if(e&&!e.ended_at) await sb.from('cmo_time_entry').update({ended_at:nowISO()}).eq('id',e.id); }
+// pausa las tareas NORMALES en curso (deja las PARALELAS corriendo) + detiene OTROS. exceptId = la que voy a iniciar
+async function pauseOthers(exceptId){
+  for(const e of entries.filter(x=>!x.ended_at&&x.kind==='task')){
+    if(e.task_id!==exceptId && !isPar(e.task_id)){ await endEntry(e); await sb.from('cmo_task').update({estado:'pausada'}).eq('id',e.task_id); }
+  }
+  const oo=otrosOpen(); if(oo)await endEntry(oo);
+}
 async function startTask(id){ const tk=tasks.find(x=>x.id===id); if(!tk||tk.estado==='completada')return;
-  await closeActive('pendiente'); if(tk.espera_desde)await closeEspera(tk);
+  if(!tk.paralelo) await pauseOthers(id);          // normal: pausa las demás normales (las paralelas siguen)
+  if(tk.espera_desde)await closeEspera(tk);
+  if(!openTaskEntry(id)) await sb.from('cmo_time_entry').insert({task_id:id,project_id:tk.project_id,kind:'task',label:tk.titulo,started_at:nowISO()});
   await sb.from('cmo_task').update({estado:'en_progreso',espera_desde:null}).eq('id',id);
-  await sb.from('cmo_time_entry').insert({task_id:id,project_id:tk.project_id,kind:'task',label:tk.titulo,started_at:nowISO()});
   toast("▶ Iniciada: "+tk.titulo); await refresh(); paintOtros(); }
-async function pauseTask(){ await closeActive('pendiente'); toast("⏸ Pausada"); await refresh(); paintOtros(); }
+async function pauseTask(id){ const e=openTaskEntry(id); if(e)await endEntry(e); await sb.from('cmo_task').update({estado:'pausada'}).eq('id',id); toast("⏸ Pausada"); await refresh(); paintOtros(); }
 async function finishTask(id){ const tk=tasks.find(x=>x.id===id);
   const kids=kidsOf(id); if(kids.length&&kids.some(c=>!isCompleted(c))){toast("Faltan sub-tareas por completar");return;}
-  if(active&&active.task_id===id){await sb.from('cmo_time_entry').update({ended_at:nowISO()}).eq('id',active.id);active=null;}
+  const oe=openTaskEntry(id); if(oe)await endEntry(oe);
   if(tk&&tk.espera_desde)await closeEspera(tk);
   if(tk&&tk.recurrencia==='semanal')await sb.from('cmo_task').update({completado_en:nowISO(),estado:'pendiente',espera_desde:null}).eq('id',id);
   else await sb.from('cmo_task').update({estado:'completada',completado_en:nowISO(),espera_desde:null}).eq('id',id);
   toast("✓ Terminada: "+(tk?tk.titulo:'')); await refresh(); paintOtros(); }
 async function closeEspera(tk){ if(!tk||!tk.espera_desde)return;
   await sb.from('cmo_time_entry').insert({task_id:tk.id,project_id:tk.project_id,kind:'espera',label:'espera',started_at:tk.espera_desde,ended_at:nowISO()}); }
-async function setEspera(id){ const tk=tasks.find(x=>x.id===id); if(!tk)return;
-  const de=prompt("¿A quién/qué estás esperando? (proveedor, cliente, compañero… opcional)", tk.espera_de||"");
-  if(active&&active.task_id===id){await sb.from('cmo_time_entry').update({ended_at:nowISO()}).eq('id',active.id);active=null;}
-  await sb.from('cmo_task').update({estado:'en_espera',espera_desde:nowISO(),espera_de:(de&&de.trim())||null}).eq('id',id);
-  toast("⏳ En espera"+(de&&de.trim()?(" · "+de.trim()):"")); await refresh(); paintOtros(); }
+async function setEspera(id,quick){ const tk=tasks.find(x=>x.id===id); if(!tk)return;
+  let de=tk.espera_de||null;
+  if(!quick){ const r=prompt("¿A quién/qué estás esperando? (proveedor, cliente, compañero… opcional)", tk.espera_de||""); if(r!==null)de=(r&&r.trim())||null; }
+  const oe=openTaskEntry(id); if(oe)await endEntry(oe);
+  await sb.from('cmo_task').update({estado:'en_espera',espera_desde:nowISO(),espera_de:de}).eq('id',id);
+  toast("⏳ En espera"+(de?(" · "+de):"")); await refresh(); paintOtros(); }
 async function resumeEspera(id){ const tk=tasks.find(x=>x.id===id); if(!tk)return;
   await closeEspera(tk); await sb.from('cmo_task').update({estado:'pendiente',espera_desde:null}).eq('id',id);
   toast("↩ De vuelta en tu cancha"); await refresh(); }
+async function toggleParalelo(id){ const tk=tasks.find(x=>x.id===id); if(!tk)return; const v=!tk.paralelo;
+  await sb.from('cmo_task').update({paralelo:v}).eq('id',id);
+  toast(v?"∥ En paralelo: no se pausará al iniciar otra":"Ya no corre en paralelo"); await refresh(); }
 async function addSubtask(parentId){ const tk=tasks.find(x=>x.id===parentId); if(!tk)return;
   const title=prompt("Nueva sub-tarea de «"+tk.titulo+"»:",""); if(title===null)return; const tt=title.trim(); if(!tt)return;
   await sb.from('cmo_task').insert({parent_task_id:parentId,project_id:tk.project_id,titulo:tt,estado:'pendiente',sort:0,responsable_email:tk.responsable_email||null});
   toast("＋ Sub-tarea agregada"); await refresh(); }
 async function toggleOtros(){
-  if(active&&active.kind==='otros'){await closeActive();toast("OTROS detenido");}
-  else{await closeActive('pendiente');await sb.from('cmo_time_entry').insert({kind:'otros',label:'OTROS',started_at:nowISO()});toast("◉ OTROS activo");}
+  const oo=otrosOpen();
+  if(oo){ await endEntry(oo); toast("OTROS detenido"); }
+  else{ await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'otros',label:'OTROS',started_at:nowISO()}); toast("◉ OTROS activo"); }
   await refresh(); paintOtros(); }
 async function addTask(){ const inp=$("#newTask");let pid=$("#newProj").value;const title=inp.value.trim();if(!title)return;
   if(pid==='__new__'){toast("Elige o crea una categoría primero");return;}
@@ -945,13 +967,13 @@ function renderNow(){const pill=$("#nowpill"),txt=$("#nowTxt"),tt=$("#nowT");pil
   else if(active&&active.kind==='otros'){pill.classList.add("otros");txt.textContent="OTROS (no planeado)";tt.textContent=fmt(otrosSecToday());}
   else{txt.textContent="Sin actividad";tt.textContent="00:00:00";}}
 function refreshLive(){
-  if(active){const el=document.querySelector('.task[data-id="'+active.task_id+'"] .elapsed');if(el){const tk=tasks.find(x=>x.id===active.task_id);if(tk)el.textContent=fmt(taskSec(tk));}}
+  entries.forEach(e=>{ if(!e.ended_at&&e.kind==='task'){ const el=document.querySelector('.task[data-id="'+e.task_id+'"] .elapsed'); if(el){const tk=tasks.find(x=>x.id===e.task_id); if(tk)el.textContent=fmt(taskSec(tk));} } });
   $("#oTime").textContent=fmt(otrosSecToday());
   projects.forEach(p=>{const v=document.querySelector('.pcard[data-id="'+p.id+'"] .ptime .val');if(v)v.textContent=fmtHM(projSecToday(p));});
   renderBars();renderDayTotal();renderTopStats();}
 function taskRow(t,isSub){const p=proj(t.project_id);const dom=p?DOMAINS[p.dominio]:{name:'—',color:'#34483c',dim:'#1a2620'};
-  const done=isDoneNow(t), running=t.estado==='en_progreso', waiting=t.estado==='en_espera';
-  const div=document.createElement("div");div.className="task"+(running?" running":"")+(done?" done":"")+(waiting?" waiting":"")+(isSub?" sub":"");
+  const done=isDoneNow(t), running=t.estado==='en_progreso', waiting=t.estado==='en_espera', paused=t.estado==='pausada';
+  const div=document.createElement("div");div.className="task"+(running?" running":"")+(paused?" paused":"")+(done?" done":"")+(waiting?" waiting":"")+(isSub?" sub":"");
   div.dataset.id=t.id;div.style.setProperty("--dom",(dom||{}).color);div.style.setProperty("--dom-dim",(dom||{}).dim);
   const linkBtn=t.link?'<button class="tbtn" data-act="openlink" title="Abrir enlace">🔗</button>':'<button class="tbtn dim" data-act="setlink" title="Vincular URL / conversación">🔗</button>';
   const editBtn='<button class="tbtn" data-act="edit" title="Editar: responsable, categoría, repetir, fecha">✎</button>';
@@ -969,9 +991,11 @@ function taskRow(t,isSub){const p=proj(t.project_id);const dom=p?DOMAINS[p.domin
   const noteBtn='<button class="tbtn note'+(t.notas?' on':'')+'" data-act="notes" title="'+(t.notas?'Ver/editar notas':'Agregar notas')+'">📝</button>';
   const kids=kidsOf(t.id);const subBadge=kids.length?'<span class="subcount" title="Sub-tareas completadas">☑ '+kids.filter(isCompleted).length+'/'+kids.length+'</span>':'';
   const esp=taskEsperaSec(t);const espBadge=(waiting||esp>0)?'<span class="espbadge'+(waiting?' on':'')+'" title="Tiempo fuera de tu cancha (esperando a un tercero)">⏳ '+fmtDur(esp)+(waiting?' · esperando'+(t.espera_de?' a '+esc(t.espera_de):''):'')+'</span>':'';
-  div.innerHTML='<div class="body">'+titleHtml+'<div class="meta"><span class="tag">'+esc(p?p.nombre:'Sin proyecto')+'</span>'+recBadge+dueHtml+respHtml+subBadge+espBadge+'<span class="elapsed">'+fmt(taskSec(t))+'</span></div></div><div class="ctrls">'+noteBtn+ctrl+'</div>';
+  const parBadge=t.paralelo?'<span class="parbadge" data-act="par" title="Corre en paralelo (segundo plano): NO se pausa al iniciar otra. Clic para quitar.">∥ paralelo</span>':'';
+  const pauseBadge=paused?'<span class="pausebadge" title="En pausa · retómala con ▶">⏸ en pausa</span>':'';
+  div.innerHTML='<div class="body">'+titleHtml+'<div class="meta"><span class="tag">'+esc(p?p.nombre:'Sin proyecto')+'</span>'+recBadge+dueHtml+respHtml+subBadge+parBadge+pauseBadge+espBadge+'<span class="elapsed">'+fmt(taskSec(t))+'</span></div></div><div class="ctrls">'+noteBtn+ctrl+'</div>';
   div.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();const a=b.dataset.act;
-    if(a==='start')startTask(t.id);else if(a==='pause')pauseTask();else if(a==='finish')finishTask(t.id);
+    if(a==='start')startTask(t.id);else if(a==='pause')pauseTask(t.id);else if(a==='finish')finishTask(t.id);else if(a==='par')toggleParalelo(t.id);
     else if(a==='del')delTask(t.id);else if(a==='openlink')window.open(t.link,'_blank');else if(a==='setlink')setTaskLink(t);else if(a==='editrec')openRecEdit(t);else if(a==='notes')editNotes(t);else if(a==='edit')openTaskEdit(t);
     else if(a==='espera')setEspera(t.id);else if(a==='resume')resumeEspera(t.id);else if(a==='addsub')addSubtask(t.id);}));
   return div;}
@@ -990,7 +1014,7 @@ function renderTasks(){const list=$("#taskList");list.innerHTML="";
   else{show=show.filter(t=>{const p=proj(t.project_id);return p&&!p.archivado;});if(filter!=='all')show=show.filter(t=>(proj(t.project_id)||{}).dominio===filter);}
   show=show.filter(t=>schedToday(t));                    // recurrentes: solo en sus días
   show=show.filter(t=>!isDoneNow(t)||doneToday(t));      // ocultar completadas de días previos
-  const ord=t=>isDoneNow(t)?2:(t.estado==='en_progreso'?0:(t.estado==='en_espera'?1.5:1));
+  const ord=t=>isDoneNow(t)?3:(t.estado==='en_progreso'?0:(t.estado==='pausada'?0.5:(t.estado==='en_espera'?1.5:1)));
   const tops=show.filter(t=>!t.parent_task_id).sort((a,b)=>ord(a)-ord(b));
   if(!tops.length){const e=document.createElement("div");e.className="empty";e.innerHTML='Sin pendientes aquí.<br>Agrega uno arriba ↑';list.appendChild(e);return;}
   tops.forEach(t=>{list.appendChild(taskRow(t,false));
@@ -1060,7 +1084,7 @@ function renderNowSelect(){const sel=$("#newProj");const cur=sel.value;sel.inner
     projects.filter(s=>!s.archivado&&s.parent_id===p.id).forEach(s=>{const so=document.createElement("option");so.value=s.id;so.textContent="   › "+s.nombre;sel.appendChild(so);});});
   const o=document.createElement("option");o.value="__new__";o.textContent="＋ Nueva categoría…";sel.appendChild(o);
   if(selProj&&projects.some(p=>p.id===selProj))sel.value=selProj;else if(cur&&cur!=='__new__')sel.value=cur;}
-function paintOtros(){const on=active&&active.kind==='otros';const ob=$("#otrosBtn");ob.classList.toggle("active",on);ob.setAttribute("aria-pressed",on?"true":"false");
+function paintOtros(){const on=!!otrosOpen();const ob=$("#otrosBtn");ob.classList.toggle("active",on);ob.setAttribute("aria-pressed",on?"true":"false");
   $("#oTxt").textContent=on?"EN OTROS…":"OTROS";$("#oIcon").textContent=on?"■":"◉";}
 function renderAll(){renderNowSelect();fillResp();fillViewAs();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderAgenda();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
 function fmtEventTime(ini){ if(!ini)return''; if(!(''+ini).includes('T'))return 'Todo el día';
@@ -1313,51 +1337,85 @@ body{background:#0a120d}
 .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .name{font-size:12px;color:#9fb6a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;font-weight:600}
 .count{font-size:10px;font-weight:800;color:#66c093;background:rgba(87,176,131,.15);border:1px solid rgba(87,176,131,.32);padding:2px 8px;border-radius:999px;white-space:nowrap}
-.timer{font-size:37px;font-weight:800;letter-spacing:.5px;font-variant-numeric:tabular-nums;text-align:center;line-height:1;margin:auto 0}
+.timer{font-size:34px;font-weight:800;letter-spacing:.5px;font-variant-numeric:tabular-nums;text-align:center;line-height:1;margin:3px 0}
 .card.otros .timer{color:#e6be6f}
 .card.idle .timer{color:#5f7568}
-.row{display:flex;gap:7px;margin-top:auto}
+.frow{display:flex;gap:6px}
+.mbtn{border:none;border-radius:8px;padding:7px 6px;font-size:12px;font-weight:800;cursor:pointer;transition:.15s}
+.mbtn:hover{filter:brightness(1.12)}
+.mbtn.pause{flex:none;background:rgba(140,165,225,.18);color:#a9c1ff;border:1px solid rgba(140,165,225,.36)}
+.mbtn.esp{flex:none;background:rgba(224,178,91,.15);color:#e6be6f;border:1px solid rgba(224,178,91,.36)}
+.mbtn.done2{flex:1;background:#57b083;color:#04130a}
+.others{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin:3px 0}
+.olbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#6f8578}
+.oitem{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07);border-radius:7px;padding:5px 7px;cursor:pointer}
+.oitem:hover{background:rgba(255,255,255,.09)}
+.odot{width:7px;height:7px;border-radius:50%;flex:none}
+.odot.run{background:#57b083;box-shadow:0 0 0 3px rgba(87,176,131,.22)}
+.odot.pause{background:#cdb26a}
+.oname{flex:1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.otime{font-size:11px;font-variant-numeric:tabular-nums;color:#9fb6a8;font-weight:700}
+.obtn{border:none;background:transparent;color:#9fb6a8;font-size:13px;cursor:pointer;padding:1px 4px;border-radius:5px}
+.obtn:hover{background:rgba(255,255,255,.12);color:#eaf3ec}
+.foot{display:flex;gap:7px}
 .pbtn{flex:1;border:none;border-radius:9px;padding:8px 5px;font-size:12px;font-weight:800;cursor:pointer;transition:.15s;white-space:nowrap}
 .pbtn.otros{background:rgba(224,178,91,.15);color:#e6be6f;border:1px solid rgba(224,178,91,.36)}
 .pbtn.otros.on{background:#e6be6f;color:#2a2010}
-.pbtn.done{background:#57b083;color:#04130a}
-.pbtn.done:hover,.pbtn.otros:hover{filter:brightness(1.1)}
+.pbtn.open{background:#57b083;color:#04130a}
+.pbtn:hover{filter:brightness(1.1)}
 .light body{background:#eef4ef}
 .light .card{background:linear-gradient(160deg,#ffffff,#e8f1ea);color:#14201a;border-color:#cbe0d2}
 .light .name{color:#5c7466}
-.light .card.idle .timer{color:#9db3a5}`;
-const PIP_HTML=`<div class="card idle" id="pipCard"><div class="top"><div class="name" id="pipName">Sin actividad</div><div class="count" id="pipCount">0 pend</div></div><div class="timer" id="pipTimer">00:00:00</div><div class="row"><button class="pbtn otros" id="pipOtros">◉ OTROS</button><button class="pbtn done" id="pipDone">▸ Abrir portal</button></div></div>`;
+.light .card.idle .timer{color:#9db3a5}
+.light .oitem{background:rgba(0,0,0,.035);border-color:rgba(0,0,0,.08)}
+.light .oitem:hover{background:rgba(0,0,0,.07)}
+.light .otime,.light .obtn{color:#5c7466}`;
+const PIP_HTML=`<div class="card idle" id="pipCard"><div class="top"><div class="name" id="pipName">Sin actividad</div><div class="count" id="pipCount">0 pend</div></div><div class="timer" id="pipTimer">00:00:00</div><div class="frow" id="pipFRow"><button class="mbtn pause" id="pipPause" title="Pausar">⏸</button><button class="mbtn esp" id="pipEsp" title="No está en mi cancha (en espera)">⏳</button><button class="mbtn done2" id="pipDone" title="Terminar y volver al portal">✓ Terminar</button></div><div class="others" id="pipOthers"></div><div class="foot"><button class="pbtn otros" id="pipOtros">◉ OTROS</button><button class="pbtn open" id="pipOpen">▸ Portal</button></div></div>`;
+let pipOthersSig='';
+function pipToggle(id){ const t=tasks.find(x=>x.id===id); if(!t)return; if(t.estado==='en_progreso')pauseTask(id); else startTask(id); }
+function fmtShort(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return h>0?(h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')):(String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'));}
 async function openPip(){
   if(!('documentPictureInPicture' in window)){ toast("Tu navegador no soporta la ventana flotante siempre-visible. Usa Chrome o Edge."); return; }
   if(pipWin){ try{pipWin.focus();}catch(e){} return; }
-  let pw; try{ pw=await documentPictureInPicture.requestWindow({width:266,height:186}); }
+  let pw; try{ pw=await documentPictureInPicture.requestWindow({width:282,height:300}); }
   catch(e){ toast("No se pudo abrir la ventana flotante."); return; }
-  pipWin=pw;
+  pipWin=pw; pipOthersSig='';
   const st=pw.document.createElement('style'); st.textContent=PIP_CSS; pw.document.head.appendChild(st);
   pw.document.body.innerHTML=PIP_HTML;
-  pw.document.getElementById('pipOtros').addEventListener('click',()=>{ toggleOtros(); });
-  pw.document.getElementById('pipDone').addEventListener('click',async()=>{
-    if(active&&active.kind==='task'){ const id=active.task_id; try{ await finishTask(id); }catch(e){} }
-    try{ window.focus(); }catch(e){}
-  });
+  const g=id=>pw.document.getElementById(id);
+  g('pipOtros').addEventListener('click',()=>toggleOtros());
+  g('pipOpen').addEventListener('click',()=>{ try{window.focus();}catch(e){} });
+  g('pipPause').addEventListener('click',()=>{ if(active&&active.kind==='task')pauseTask(active.task_id); });
+  g('pipEsp').addEventListener('click',()=>{ if(active&&active.kind==='task')setEspera(active.task_id,true); });
+  g('pipDone').addEventListener('click',async()=>{ if(active&&active.kind==='task'){ try{await finishTask(active.task_id);}catch(e){} } try{window.focus();}catch(e){} });
   pw.addEventListener('pagehide',()=>{ pipWin=null; const b=$("#pipBtn"); if(b)b.classList.remove('on'); });
   const b=$("#pipBtn"); if(b)b.classList.add('on');
   updatePip();
 }
 function updatePip(){
   if(!pipWin) return; const d=pipWin.document; const card=d.getElementById('pipCard'); if(!card) return;
+  d.documentElement.className=document.documentElement.className;
+  const fid=(active&&active.kind==='task')?active.task_id:null;
   let name='Sin actividad', time='00:00:00', mode='idle';
-  if(active&&active.kind==='task'){ const tk=tasks.find(x=>x.id===active.task_id); name=tk?tk.titulo:(active.label||'Tarea'); time=fmt(taskSec({id:active.task_id})); mode='run'; }
+  if(fid){ const tk=tasks.find(x=>x.id===fid); name=tk?tk.titulo:(active.label||'Tarea'); time=fmt(taskSec({id:fid})); mode='run'; }
   else if(active&&active.kind==='otros'){ name='OTROS · interrupción'; time=fmt(otrosSecToday()); mode='otros'; }
   d.getElementById('pipName').textContent=name;
   d.getElementById('pipTimer').textContent=time;
   card.className='card '+mode;
   const meEmail=me&&me.email; const pend=tasks.filter(x=>!x.parent_task_id&&(x.owner_id===(me&&me.id)||x.responsable_email===meEmail)&&isPendingNow(x)).length;
   d.getElementById('pipCount').textContent=pend+' pend';
-  const on=active&&active.kind==='otros';
-  const ob=d.getElementById('pipOtros'); ob.textContent=on?'■ Detener':'◉ OTROS'; ob.className='pbtn otros'+(on?' on':'');
-  const done=d.getElementById('pipDone'); done.textContent=(active&&active.kind==='task')?'✓ Terminar':'▸ Abrir portal';
-  d.documentElement.className=document.documentElement.className;
+  d.getElementById('pipFRow').style.display=fid?'flex':'none';
+  const on=!!otrosOpen(); const ob=d.getElementById('pipOtros'); ob.textContent=on?'■ Detener':'◉ OTROS'; ob.className='pbtn otros'+(on?' on':'');
+  // otras actividades activas (en curso o en pausa) menos la enfocada
+  const others=tasks.filter(t=>!t.parent_task_id&&(t.estado==='en_progreso'||t.estado==='pausada')&&t.id!==fid);
+  const box=d.getElementById('pipOthers'); const sig=others.map(t=>t.id+':'+t.estado).join('|');
+  if(sig!==pipOthersSig){
+    pipOthersSig=sig;
+    box.innerHTML=others.length?('<div class="olbl">Otras activas · toca para volver</div>'+others.map(t=>{const run=t.estado==='en_progreso';
+      return '<div class="oitem" data-id="'+t.id+'"><span class="odot '+(run?'run':'pause')+'"></span><span class="oname">'+esc(t.titulo)+'</span><span class="otime">'+fmtShort(taskSec(t))+'</span><button class="obtn" data-id="'+t.id+'" title="'+(run?'Pausar':'Reanudar')+'">'+(run?'⏸':'▶')+'</button></div>';}).join('')):'';
+    box.querySelectorAll('.obtn').forEach(b=>b.addEventListener('click',ev=>{ev.stopPropagation();pipToggle(b.dataset.id);}));
+    box.querySelectorAll('.oitem').forEach(el=>el.addEventListener('click',()=>{const t=tasks.find(x=>x.id===el.dataset.id);if(t&&t.estado==='pausada')startTask(el.dataset.id);}));
+  } else { others.forEach(t=>{const el=box.querySelector('.oitem[data-id="'+t.id+'"] .otime');if(el)el.textContent=fmtShort(taskSec(t));}); }
 }
 $("#pipBtn") && $("#pipBtn").addEventListener("click",openPip);
 $("#resumenBtn").addEventListener("click",openResumen);
@@ -1386,6 +1444,7 @@ function openTaskEdit(t){
     '<label '+EDLBL+'>Categoría / Proyecto</label><select id="edCat" '+EDIN+'>'+catOpts+'</select>'+
     '<label '+EDLBL+'>Fecha límite</label><input type="date" id="edDue" '+EDIN+' value="'+(t.fecha_limite||'')+'">'+
     '<label '+EDLBL+'>Repetir en días (vacío = una sola vez)</label><div id="edDays" style="display:flex;gap:5px;flex-wrap:wrap">'+daysHtml+'</div>'+
+    '<label '+EDLBL+'>Multi-cronómetro</label><label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--ink);cursor:pointer;line-height:1.35"><input type="checkbox" id="edPar" '+(t.paralelo?'checked':'')+' style="width:16px;height:16px;margin-top:1px;flex:none"><span>Correr <b>en paralelo</b> (segundo plano): esta actividad <b>no se pausa</b> al iniciar otra, sigue contando mientras trabajas en algo más. Úsalo solo para lo que de verdad corre a la par.</span></label>'+
     '<div style="display:flex;gap:8px;margin-top:16px"><button class="primary" id="edSave" style="flex:1;margin:0">Guardar</button><button class="pbtn" id="edCancel">Cancelar</button></div>';
   const paint=()=>$("#edDays").querySelectorAll('[data-d]').forEach(b=>b.classList.toggle('on',edDays.includes(+b.dataset.d)));
   paint();
@@ -1400,7 +1459,8 @@ async function saveTaskEdit(){
   const responsable_email=$("#edResp").value||null;
   const project_id=$("#edCat").value||null;
   const due=$("#edDue").value||null;
-  const upd={titulo,responsable_email,project_id,fecha_limite:due,recurrencia:edDays.length?'semanal':'unica',dias_semana:edDays.length?edDays.slice():null};
+  const paralelo=!!($("#edPar")&&$("#edPar").checked);
+  const upd={titulo,responsable_email,project_id,fecha_limite:due,recurrencia:edDays.length?'semanal':'unica',dias_semana:edDays.length?edDays.slice():null,paralelo};
   const {error}=await sb.from('cmo_task').update(upd).eq('id',edId);
   if(error){toast('No se pudo guardar');return;}
   $("#taskModal").classList.add("hidden"); toast('Cambios guardados'); await refresh();
