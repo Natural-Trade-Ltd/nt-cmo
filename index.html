@@ -843,9 +843,10 @@ async function finishTask(id){ const tk=tasks.find(x=>x.id===id);
 async function closeEspera(tk){ if(!tk||!tk.espera_desde)return;
   await sb.from('cmo_time_entry').insert({task_id:tk.id,project_id:tk.project_id,kind:'espera',label:'espera',started_at:tk.espera_desde,ended_at:nowISO()}); }
 async function setEspera(id){ const tk=tasks.find(x=>x.id===id); if(!tk)return;
+  const de=prompt("¿A quién/qué estás esperando? (proveedor, cliente, compañero… opcional)", tk.espera_de||"");
   if(active&&active.task_id===id){await sb.from('cmo_time_entry').update({ended_at:nowISO()}).eq('id',active.id);active=null;}
-  await sb.from('cmo_task').update({estado:'en_espera',espera_desde:nowISO()}).eq('id',id);
-  toast("⏳ En espera — fuera de tu cancha"); await refresh(); paintOtros(); }
+  await sb.from('cmo_task').update({estado:'en_espera',espera_desde:nowISO(),espera_de:(de&&de.trim())||null}).eq('id',id);
+  toast("⏳ En espera"+(de&&de.trim()?(" · "+de.trim()):"")); await refresh(); paintOtros(); }
 async function resumeEspera(id){ const tk=tasks.find(x=>x.id===id); if(!tk)return;
   await closeEspera(tk); await sb.from('cmo_task').update({estado:'pendiente',espera_desde:null}).eq('id',id);
   toast("↩ De vuelta en tu cancha"); await refresh(); }
@@ -913,7 +914,7 @@ function taskRow(t,isSub){const p=proj(t.project_id);const dom=p?DOMAINS[p.domin
   const respHtml=(t.responsable_email&&t.responsable_email!==(me&&me.email))?'<span class="rav" title="Responsable: '+esc(respName(t.responsable_email))+'">'+esc(respIni(t.responsable_email))+'</span>':'';
   const noteBtn='<button class="tbtn note'+(t.notas?' on':'')+'" data-act="notes" title="'+(t.notas?'Ver/editar notas':'Agregar notas')+'">📝</button>';
   const kids=kidsOf(t.id);const subBadge=kids.length?'<span class="subcount" title="Sub-tareas completadas">☑ '+kids.filter(isCompleted).length+'/'+kids.length+'</span>':'';
-  const esp=taskEsperaSec(t);const espBadge=(waiting||esp>0)?'<span class="espbadge'+(waiting?' on':'')+'" title="Tiempo fuera de tu cancha (esperando a un tercero)">⏳ '+fmtDur(esp)+(waiting?' · esperando':'')+'</span>':'';
+  const esp=taskEsperaSec(t);const espBadge=(waiting||esp>0)?'<span class="espbadge'+(waiting?' on':'')+'" title="Tiempo fuera de tu cancha (esperando a un tercero)">⏳ '+fmtDur(esp)+(waiting?' · esperando'+(t.espera_de?' a '+esc(t.espera_de):''):'')+'</span>':'';
   div.innerHTML='<div class="body">'+titleHtml+'<div class="meta"><span class="tag">'+esc(p?p.nombre:'Sin proyecto')+'</span>'+recBadge+dueHtml+respHtml+subBadge+espBadge+'<span class="elapsed">'+fmt(taskSec(t))+'</span></div></div><div class="ctrls">'+noteBtn+ctrl+'</div>';
   div.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();const a=b.dataset.act;
     if(a==='start')startTask(t.id);else if(a==='pause')pauseTask();else if(a==='finish')finishTask(t.id);
