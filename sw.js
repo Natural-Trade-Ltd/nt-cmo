@@ -1,5 +1,5 @@
 // CMO service worker v3 — el HTML SIEMPRE se baja de red (las actualizaciones llegan solas)
-const CACHE = 'cmo-v20';
+const CACHE = 'cmo-v21';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', e => {

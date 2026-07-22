@@ -1011,7 +1011,7 @@ function fmtEventTime(ini){ if(!ini)return''; if(!(''+ini).includes('T'))return 
   try{ return new Date(ini).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} }
 function renderAgenda(){const el=$("#agendaList");if(!el)return;
   $("#agendaCount").textContent=meetings.length||'';
-  if(meetings.length){ el.innerHTML=meetings.map(m=>'<div class="agrow"><span class="agt">'+fmtEventTime(m.inicio)+'</span><span class="agttl">'+esc(m.titulo||'(sin título)')+'</span></div>').join(''); }
+  if(meetings.length){ el.innerHTML=meetings.map(m=>'<div class="agrow"><span class="agt">'+(m.all_day?'Todo el día':fmtEventTime(m.inicio))+'</span><span class="agttl">'+esc(m.titulo||'(sin título)')+'</span></div>').join(''); }
   else if(calConnected){ el.innerHTML='<div class="empty" style="padding:12px 8px">Sin juntas hoy 🎉</div>'; }
   else { el.innerHTML='<div class="empty" style="padding:12px 8px">Conecta tu Google Calendar en ⚙ para ver tus juntas del día.</div>'; }}
 
