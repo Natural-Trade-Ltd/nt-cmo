@@ -700,7 +700,8 @@ sb.auth.onAuthStateChange((_e,session)=>{ if(session&&session.user){ captureGoog
 
 async function route(session){
   const email=session.user.email;
-  const{data:team}=await sb.from('cmo_team').select('*').eq('email',email).maybeSingle();
+  const{data:team,error:teamErr}=await sb.from('cmo_team').select('*').eq('email',email).maybeSingle();
+  if(teamErr){ gmsg("El servicio está iniciando. Espera unos segundos y vuelve a tocar «Continuar con Google» (no te saca la sesión).","err"); return; } // API caído/arrancando: NO cerrar sesión
   if(!team){ gmsg("Tu correo no está autorizado. Pide a Jorge que te dé de alta.","err"); await sb.auth.signOut(); return; }
   const{data:usr}=await sb.from('cmo_user').select('*').eq('id',session.user.id).maybeSingle();
   if(usr && usr.onboarded){ me=usr; enterApp(session); }
