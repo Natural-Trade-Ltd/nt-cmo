@@ -247,6 +247,7 @@
   .gutter{position:fixed;width:9px;z-index:30;cursor:col-resize;touch-action:none;display:none}
   .gutter::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:3px;height:42px;border-radius:3px;background:var(--border);transition:background .15s,height .15s}
   .gutter:hover::after{background:var(--accent);height:64px}
+  #pipBtn.on{color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
   #gate,#onboard,#catModal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:auto;padding:20px;
     background:radial-gradient(900px 500px at 50% 0%, #15241c 0%, transparent 60%), var(--bg)}
   #sosModal,#roomModal,#notasModal,#resumenModal,#taskModal,#nsModal{position:fixed;inset:0;z-index:110;display:grid;place-items:center;overflow:auto;padding:20px;background:rgba(6,12,9,.72)}
@@ -411,6 +412,7 @@
     <button class="iconbtn" id="notasBtn" title="Notas (comentarios libres)">📝</button>
     <button class="iconbtn sos" id="sosBtn" title="Pedir apoyo al equipo (En vivo)">📣</button>
     <button class="iconbtn" id="modBtn" title="Módulos activos">⚙</button>
+    <button class="iconbtn" id="pipBtn" title="Ventana flotante (cronómetro siempre visible sobre el escritorio)">📌</button>
     <button class="iconbtn" id="switchBtn" title="Ir a mi Centro de Mando personal" style="display:none">⇄</button>
     <button class="iconbtn" id="themeBtn" title="Tema claro/obscuro">☀</button>
     <div class="whoami"><span class="em" id="whoEmail"></span><button id="signout">Cerrar sesión</button></div>
@@ -935,7 +937,7 @@ async function setLinkUrl(l){const url=prompt("Pega el URL de NetSuite para «"+
 function renderClock(){const d=new Date();
   $("#clock").textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(x=>String(x).padStart(2,"0")).join(":");
   $("#date").textContent=d.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});}
-function tick(){renderClock();renderNow();refreshLive();jClock();}
+function tick(){renderClock();renderNow();refreshLive();jClock();updatePip();}
 function renderTopStats(){$("#topWork").textContent=fmtHM(totalWorkToday());$("#topOtros").textContent=fmtHM(otrosSecToday());
   const meEmail=me&&me.email;const pend=tasks.filter(t=>!t.parent_task_id&&(t.owner_id===(me&&me.id)||t.responsable_email===meEmail)&&isPendingNow(t)).length;$("#topPend").textContent=pend;$("#pendCount").textContent=pend+" activas";}
 function renderNow(){const pill=$("#nowpill"),txt=$("#nowTxt"),tt=$("#nowT");pill.className="nowpill";
@@ -1300,6 +1302,64 @@ async function loadResumen(){
     }
   }catch(e){}
 }
+// ===== VENTANA FLOTANTE (Document Picture-in-Picture: cronómetro siempre visible sobre el escritorio) =====
+let pipWin=null;
+const PIP_CSS=`*{margin:0;box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;-webkit-user-select:none;user-select:none}
+html,body{height:100%}
+body{background:#0a120d}
+.card{height:100%;display:flex;flex-direction:column;gap:5px;padding:11px 13px;background:linear-gradient(160deg,#11221b,#0a120d);color:#eaf3ec;border:1.5px solid #24382d;transition:box-shadow .2s}
+.card.run{box-shadow:inset 0 0 0 2px rgba(87,176,131,.55)}
+.card.otros{box-shadow:inset 0 0 0 2px rgba(224,178,91,.6)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.name{font-size:12px;color:#9fb6a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;font-weight:600}
+.count{font-size:10px;font-weight:800;color:#66c093;background:rgba(87,176,131,.15);border:1px solid rgba(87,176,131,.32);padding:2px 8px;border-radius:999px;white-space:nowrap}
+.timer{font-size:39px;font-weight:800;letter-spacing:.5px;font-variant-numeric:tabular-nums;text-align:center;line-height:1.02;margin:1px 0}
+.card.otros .timer{color:#e6be6f}
+.card.idle .timer{color:#5f7568}
+.row{display:flex;gap:7px;margin-top:auto}
+.pbtn{flex:1;border:none;border-radius:9px;padding:9px 5px;font-size:12px;font-weight:800;cursor:pointer;transition:.15s;white-space:nowrap}
+.pbtn.otros{background:rgba(224,178,91,.15);color:#e6be6f;border:1px solid rgba(224,178,91,.36)}
+.pbtn.otros.on{background:#e6be6f;color:#2a2010}
+.pbtn.done{background:#57b083;color:#04130a}
+.pbtn.done:hover,.pbtn.otros:hover{filter:brightness(1.1)}
+.light body{background:#eef4ef}
+.light .card{background:linear-gradient(160deg,#ffffff,#e8f1ea);color:#14201a;border-color:#cbe0d2}
+.light .name{color:#5c7466}
+.light .card.idle .timer{color:#9db3a5}`;
+const PIP_HTML=`<div class="card idle" id="pipCard"><div class="top"><div class="name" id="pipName">Sin actividad</div><div class="count" id="pipCount">0 pend</div></div><div class="timer" id="pipTimer">00:00:00</div><div class="row"><button class="pbtn otros" id="pipOtros">◉ OTROS</button><button class="pbtn done" id="pipDone">▸ Abrir portal</button></div></div>`;
+async function openPip(){
+  if(!('documentPictureInPicture' in window)){ toast("Tu navegador no soporta la ventana flotante siempre-visible. Usa Chrome o Edge."); return; }
+  if(pipWin){ try{pipWin.focus();}catch(e){} return; }
+  let pw; try{ pw=await documentPictureInPicture.requestWindow({width:280,height:170}); }
+  catch(e){ toast("No se pudo abrir la ventana flotante."); return; }
+  pipWin=pw;
+  const st=pw.document.createElement('style'); st.textContent=PIP_CSS; pw.document.head.appendChild(st);
+  pw.document.body.innerHTML=PIP_HTML;
+  pw.document.getElementById('pipOtros').addEventListener('click',()=>{ toggleOtros(); });
+  pw.document.getElementById('pipDone').addEventListener('click',async()=>{
+    if(active&&active.kind==='task'){ const id=active.task_id; try{ await finishTask(id); }catch(e){} }
+    try{ window.focus(); }catch(e){}
+  });
+  pw.addEventListener('pagehide',()=>{ pipWin=null; const b=$("#pipBtn"); if(b)b.classList.remove('on'); });
+  const b=$("#pipBtn"); if(b)b.classList.add('on');
+  updatePip();
+}
+function updatePip(){
+  if(!pipWin) return; const d=pipWin.document; const card=d.getElementById('pipCard'); if(!card) return;
+  let name='Sin actividad', time='00:00:00', mode='idle';
+  if(active&&active.kind==='task'){ const tk=tasks.find(x=>x.id===active.task_id); name=tk?tk.titulo:(active.label||'Tarea'); time=fmt(taskSec({id:active.task_id})); mode='run'; }
+  else if(active&&active.kind==='otros'){ name='OTROS · interrupción'; time=fmt(otrosSecToday()); mode='otros'; }
+  d.getElementById('pipName').textContent=name;
+  d.getElementById('pipTimer').textContent=time;
+  card.className='card '+mode;
+  const meEmail=me&&me.email; const pend=tasks.filter(x=>!x.parent_task_id&&(x.owner_id===(me&&me.id)||x.responsable_email===meEmail)&&isPendingNow(x)).length;
+  d.getElementById('pipCount').textContent=pend+' pend';
+  const on=active&&active.kind==='otros';
+  const ob=d.getElementById('pipOtros'); ob.textContent=on?'■ Detener':'◉ OTROS'; ob.className='pbtn otros'+(on?' on':'');
+  const done=d.getElementById('pipDone'); done.textContent=(active&&active.kind==='task')?'✓ Terminar':'▸ Abrir portal';
+  d.documentElement.className=document.documentElement.className;
+}
+$("#pipBtn") && $("#pipBtn").addEventListener("click",openPip);
 $("#resumenBtn").addEventListener("click",openResumen);
 $("#switchBtn").addEventListener("click",()=>{location.href='https://natural-trade-ltd.github.io/nt-command-center/';});
 $("#resumenClose").addEventListener("click",()=>$("#resumenModal").classList.add("hidden"));
