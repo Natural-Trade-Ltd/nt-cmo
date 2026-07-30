@@ -169,6 +169,10 @@
   .mtnote{margin-top:16px;font-size:11px;color:var(--faint);line-height:1.5;border-top:1px solid var(--border);padding-top:12px}
   .archrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12px}
   .archrow small{color:var(--muted)}
+  .agrow.live{background:color-mix(in srgb,#7aa2f7 13%,transparent);border-radius:7px;padding-left:4px}
+  .agnow{color:#7aa2f7;font-weight:700;font-size:10px;margin-left:4px;white-space:nowrap}
+  .agstop{margin-left:auto;background:#7aa2f7;color:#0b1220;border:none;border-radius:6px;min-width:22px;height:22px;cursor:pointer;font-size:11px;flex:none}
+  .agstop:hover{filter:brightness(1.1)}
   .task.waiting .title{color:#c79433}
   .subcount{font-size:10px;padding:2px 7px;border-radius:999px;background:#16241c;color:var(--good);border:1px solid var(--good-dim);white-space:nowrap}
   .espbadge{font-size:10px;padding:2px 7px;border-radius:999px;background:#2a2110;color:#e0b25b;border:1px solid #5a4620;font-family:var(--mono);white-space:nowrap}
@@ -662,7 +666,7 @@ function localDate(){const d=new Date();return d.getFullYear()+"-"+String(d.getM
 
 let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null, meetings=[], calConnected=false;
 let active=null, filter="all", selProj=null, toastT, ticking=false, lastAct=Date.now(), lastInteract=Date.now();
-let mtPeriod='hoy', centerView='tiempos';
+let mtPeriod='hoy', centerView='tiempos', juntaAuto=null;
 let newRecur=[], recEditTask=null;
 const DOW=['','L','M','M','J','V','S','D'];                     // ISO 1=lun..7=dom
 const DOWFULL=['','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
@@ -792,7 +796,7 @@ async function enterApp(session){
   if(me && !me.funciones_sembradas){ await materializeSeed(); }
   await refresh();
   await pollIncidents();
-  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); setInterval(checkAutoClose,60000); setInterval(checkIdlePause,60000);
+  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); setInterval(checkAutoClose,60000); setInterval(checkIdlePause,60000); setInterval(checkMeetings,30000); checkMeetings();
     ['click','keydown','pointerdown'].forEach(ev=>document.addEventListener(ev,()=>{lastAct=Date.now();lastInteract=Date.now();},{passive:true})); }
   window.addEventListener('beforeunload',()=>{ try{ navigator.sendBeacon && jornadaBeat(); }catch(e){} });
 }
@@ -925,7 +929,7 @@ function isCompleted(t){return isWeekly(t)?doneToday(t):(t.estado==='completada'
 function taskEsperaSec(t){let s=entries.filter(x=>x.ended_at&&x.kind==='espera'&&x.task_id===t.id).reduce((a,x)=>a+(x.seconds||0),0);
   if(t.estado==='en_espera'&&t.espera_desde)s+=Math.max(0,(Date.now()-new Date(t.espera_desde).getTime())/1000);return s;}
 function fmtDur(sec){sec=Math.max(0,Math.floor(sec));const d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);return d>0?(d+'d '+h+'h'):(h>0?(h+'h '+m+'m'):(m+'m'));}
-function totalWorkToday(){return projects.reduce((a,p)=>a+projSecToday(p),0)+generalSecToday();}
+function totalWorkToday(){return projects.reduce((a,p)=>a+projSecToday(p),0)+generalSecToday()+juntaSecToday();}
 
 // ===== ACTIONS =====
 async function endEntry(e){ if(e&&!e.ended_at) await sb.from('cmo_time_entry').update({ended_at:nowISO()}).eq('id',e.id); }
@@ -935,7 +939,7 @@ async function pauseOthers(exceptId){
     if(e.task_id!==exceptId && !isPar(e.task_id)){ await endEntry(e); await sb.from('cmo_task').update({estado:'pausada'}).eq('id',e.task_id); }
   }
   // detén cualquier bucket abierto (OTROS / Trabajo general / Descanso / Lunch) — estados mutuamente excluyentes
-  for(const e of entries.filter(x=>!x.ended_at&&(x.kind==='otros'||x.kind==='general'||x.kind==='descanso'||x.kind==='lunch'))){ await endEntry(e); }
+  for(const e of entries.filter(x=>!x.ended_at&&(x.kind==='otros'||x.kind==='general'||x.kind==='descanso'||x.kind==='lunch'||x.kind==='junta'))){ await endEntry(e); }
 }
 function generalOpen(){return entries.find(e=>!e.ended_at&&e.kind==='general')||null;}
 function generalSecToday(){const ts=todayStartISO();let s=entries.filter(x=>x.ended_at&&x.kind==='general'&&x.started_at>=ts).reduce((a,x)=>a+(x.seconds||0),0);const g=generalOpen();if(g)s+=liveOf(g);return s;}
@@ -945,6 +949,25 @@ async function toggleGeneral(){
   if(g){ await endEntry(g); toast("📨 Trabajo general detenido"); const rid=lastPausedTaskId(); if(rid){ await startTask(rid); return; } }
   else{ await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'general',label:'TRABAJO GENERAL',started_at:nowISO()}); toast("📨 Trabajo general — capturando tiempo (correo, pendientes chicos)"); }
   await refresh(); paintOtros(); }
+// ===== JUNTAS AUTOMÁTICAS: cuando una reunión del calendario está en curso, corre un cronómetro solo =====
+function meetingNow(){ const now=Date.now(); return meetings.find(m=>!m.all_day&&m.inicio&&m.fin&&new Date(m.inicio).getTime()<=now&&now<=new Date(m.fin).getTime())||null; }
+function juntaOpen(){ return entries.find(e=>!e.ended_at&&e.kind==='junta')||null; }
+function juntaSecToday(){ const ts=todayStartISO(); let s=entries.filter(x=>x.ended_at&&x.kind==='junta'&&x.started_at>=ts).reduce((a,x)=>a+(x.seconds||0),0); const j=juntaOpen(); if(j)s+=liveOf(j); return s; }
+async function checkMeetings(){
+  const cur=meetingNow(), jo=juntaOpen();
+  if(jo){ if(!cur){ await endEntry(jo); juntaAuto=null; await refresh(); paintOtros(); }              // la junta terminó
+          else if(juntaAuto&&juntaAuto!==cur.id){ await endEntry(jo); await refresh(); paintOtros(); } // junta encadenada
+          return; }
+  if(cur && juntaAuto!==cur.id){
+    // solo arranca sola si NO estás trabajando en algo; si estás en una tarea/otros/general/descanso, no te interrumpe
+    const busy=entries.some(e=>!e.ended_at&&(e.kind==='task'||e.kind==='otros'||e.kind==='general'||e.kind==='descanso'||e.kind==='lunch'));
+    if(busy)return;
+    juntaAuto=cur.id;
+    await sb.from('cmo_time_entry').insert({kind:'junta',label:('📅 '+(cur.titulo||'Junta')),started_at:nowISO()});
+    toast("📅 Junta en curso: "+(cur.titulo||'')+" — cronómetro corriendo solo"); await refresh(); paintOtros();
+  }
+}
+async function stopJunta(){ const jo=juntaOpen(); if(!jo)return; await endEntry(jo); juntaAuto=(meetingNow()||{}).id||'__off'; toast("📅 Junta detenida"); await refresh(); paintOtros(); }
 async function startTask(id){ const tk=tasks.find(x=>x.id===id); if(!tk||tk.estado==='completada')return;
   if(!tk.paralelo) await pauseOthers(id);          // normal: pausa las demás normales (las paralelas siguen)
   if(tk.espera_desde)await closeEspera(tk);
@@ -1026,8 +1049,9 @@ function tick(){renderClock();renderNow();refreshLive();jClock();updatePip();}
 function renderTopStats(){$("#topWork").textContent=fmtHM(totalWorkToday());$("#topOtros").textContent=fmtHM(otrosSecToday());
   const meEmail=me&&me.email;const pend=tasks.filter(t=>!t.parent_task_id&&(t.owner_id===(me&&me.id)||t.responsable_email===meEmail)&&isPendingNow(t)).length;$("#topPend").textContent=pend;$("#pendCount").textContent=pend+" activas";}
 function renderNow(){const pill=$("#nowpill"),txt=$("#nowTxt"),tt=$("#nowT");pill.className="nowpill";
-  const pers=personalOpen(),gen=generalOpen();
+  const pers=personalOpen(),gen=generalOpen(),jun=juntaOpen();
   if(pers){txt.textContent=(pers.kind==='lunch'?'En lunch':'En descanso');tt.textContent=fmt(liveOf(pers));}
+  else if(jun){pill.classList.add("run");txt.textContent="📅 En junta"+(jun.label?(': '+jun.label.replace('📅 ','')):'');tt.textContent=fmt(juntaSecToday());}
   else if(gen){pill.classList.add("run");txt.textContent="Trabajo general (correo / varios)";tt.textContent=fmt(generalSecToday());}
   else if(active&&active.kind==='task'){const tk=tasks.find(x=>x.id===active.task_id);pill.classList.add("run");txt.textContent=tk?tk.titulo:active.label;tt.textContent=fmt(taskSec({id:active.task_id}));}
   else if(active&&active.kind==='otros'){pill.classList.add("otros");txt.textContent="OTROS (no planeado)";tt.textContent=fmt(otrosSecToday());}
@@ -1115,13 +1139,13 @@ function renderCenter(){ if(centerView==='archived')renderArchivedList(); else r
 function renderMisTiempos(){
   const el=$("#misTiempos"); if(!el)return;
   const from = mtPeriod==='semana'?weekStartISO():todayStartISO();
-  const byDom={}; let general=0,otros=0,espera=0,personal=0;
+  const byDom={}; let general=0,otros=0,espera=0,personal=0,juntas=0;
   entries.forEach(e=>{ if(e.ended_at&&e.started_at<from)return; const s=e.ended_at?(e.seconds||0):liveOf(e);
     if(e.kind==='task'){const p=proj(e.project_id);const dom=p?p.dominio:'personal';byDom[dom]=(byDom[dom]||0)+s;}
-    else if(e.kind==='general')general+=s; else if(e.kind==='otros')otros+=s; else if(e.kind==='espera')espera+=s;
+    else if(e.kind==='general')general+=s; else if(e.kind==='junta')juntas+=s; else if(e.kind==='otros')otros+=s; else if(e.kind==='espera')espera+=s;
     else if(e.kind==='descanso'||e.kind==='lunch')personal+=s; });
-  const work=Object.values(byDom).reduce((a,b)=>a+b,0)+general;
-  const max=Math.max(1,...Object.values(byDom),general);
+  const work=Object.values(byDom).reduce((a,b)=>a+b,0)+general+juntas;
+  const max=Math.max(1,...Object.values(byDom),general,juntas);
   const doms=Object.keys(byDom).sort((a,b)=>byDom[b]-byDom[a]);
   let h='<div class="mtperiod"><button class="mtp'+(mtPeriod==='hoy'?' on':'')+'" data-p="hoy">Hoy</button><button class="mtp'+(mtPeriod==='semana'?' on':'')+'" data-p="semana">Semana</button></div>';
   h+='<div class="mttotal"><div class="mtv">'+fmtH(work)+'</div><div class="mtl">trabajo '+(mtPeriod==='semana'?'esta semana':'de hoy')+'</div></div>';
@@ -1129,7 +1153,8 @@ function renderMisTiempos(){
   doms.forEach(k=>{const d=DOMAINS[k]||{name:k,color:'#57b083'};const v=byDom[k];
     h+='<div class="mtbar"><div class="mtbh"><span>'+esc(d.name)+'</span><b>'+fmtHM(v)+'</b></div><div class="mttrack"><div class="mtfill" style="width:'+(100*v/max).toFixed(1)+'%;background:'+d.color+'"></div></div></div>';});
   if(general>0)h+='<div class="mtbar"><div class="mtbh"><span>📨 Trabajo general</span><b>'+fmtHM(general)+'</b></div><div class="mttrack"><div class="mtfill" style="width:'+(100*general/max).toFixed(1)+'%;background:#66c2a0"></div></div></div>';
-  if(!doms.length&&!general)h+='<div class="empty" style="padding:14px 4px">Aún sin tiempo registrado. Dale ▶ a una tarea, o usa 📨 Trabajo general para lo pequeño.</div>';
+  if(juntas>0)h+='<div class="mtbar"><div class="mtbh"><span>📅 Juntas</span><b>'+fmtHM(juntas)+'</b></div><div class="mttrack"><div class="mtfill" style="width:'+(100*juntas/max).toFixed(1)+'%;background:#7aa2f7"></div></div></div>';
+  if(!doms.length&&!general&&!juntas)h+='<div class="empty" style="padding:14px 4px">Aún sin tiempo registrado. Dale ▶ a una tarea, o usa 📨 Trabajo general para lo pequeño.</div>';
   h+='</div><div class="mtchips">';
   if(otros>0)h+='<span class="mtchip warn">◉ OTROS '+fmtHM(otros)+'</span>';
   if(espera>0)h+='<span class="mtchip esp">⏳ Espera '+fmtHM(espera)+'</span>';
@@ -1210,7 +1235,13 @@ function fmtEventTime(ini){ if(!ini)return''; if(!(''+ini).includes('T'))return 
   try{ return new Date(ini).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} }
 function renderAgenda(){const el=$("#agendaList");if(!el)return;
   $("#agendaCount").textContent=meetings.length||'';
-  if(meetings.length){ el.innerHTML=meetings.map(m=>'<div class="agrow"><span class="agt">'+(m.all_day?'Todo el día':fmtEventTime(m.inicio))+'</span><span class="agttl">'+esc(m.titulo||'(sin título)')+'</span></div>').join(''); }
+  if(meetings.length){ const now=Date.now();
+    el.innerHTML=meetings.map(m=>{
+      const live=!m.all_day&&m.inicio&&m.fin&&new Date(m.inicio).getTime()<=now&&now<=new Date(m.fin).getTime();
+      const runningNow=live&&!!juntaOpen();
+      return '<div class="agrow'+(live?' live':'')+'"><span class="agt">'+(m.all_day?'Todo el día':fmtEventTime(m.inicio))+'</span><span class="agttl">'+esc(m.titulo||'(sin título)')+(live?' <span class="agnow">● en curso</span>':'')+'</span>'+(runningNow?'<button class="agstop" title="Detener el cronómetro de la junta">■</button>':'')+'</div>';
+    }).join('');
+    const st=el.querySelector('.agstop'); if(st)st.addEventListener('click',stopJunta); }
   else if(calConnected){ el.innerHTML='<div class="empty" style="padding:12px 8px">Sin juntas hoy 🎉</div>'; }
   else { el.innerHTML='<div class="empty" style="padding:12px 8px">Conecta tu Google Calendar en ⚙ para ver tus juntas del día.</div>'; }}
 
@@ -1522,10 +1553,11 @@ async function openPip(){
 function updatePip(){
   if(!pipWin) return; const d=pipWin.document; const card=d.getElementById('pipCard'); if(!card) return;
   d.documentElement.className=document.documentElement.className;
-  const pers=personalOpen(),gen=generalOpen();
-  const fid=(!pers&&!gen&&active&&active.kind==='task')?active.task_id:null;
+  const pers=personalOpen(),gen=generalOpen(),jun=juntaOpen();
+  const fid=(!pers&&!gen&&!jun&&active&&active.kind==='task')?active.task_id:null;
   let name='Sin actividad', time='00:00:00', mode='idle';
   if(pers){ name=(pers.kind==='lunch'?'🍽 En lunch':'☕ En descanso'); time=fmt(liveOf(pers)); mode='idle'; }
+  else if(jun){ name=(jun.label?jun.label:'📅 En junta'); time=fmt(juntaSecToday()); mode='run'; }
   else if(gen){ name='📨 Trabajo general'; time=fmt(generalSecToday()); mode='run'; }
   else if(fid){ const tk=tasks.find(x=>x.id===fid); name=tk?tk.titulo:(active.label||'Tarea'); time=fmt(taskSec({id:fid})); mode='run'; }
   else if(active&&active.kind==='otros'){ name='OTROS · interrupción'; time=fmt(otrosSecToday()); mode='otros'; }
