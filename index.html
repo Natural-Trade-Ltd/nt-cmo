@@ -666,7 +666,7 @@ function localDate(){const d=new Date();return d.getFullYear()+"-"+String(d.getM
 
 let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null, meetings=[], calConnected=false;
 let active=null, filter="all", selProj=null, toastT, ticking=false, lastAct=Date.now(), lastInteract=Date.now();
-let mtPeriod='hoy', centerView='tiempos', juntaAuto=null;
+let mtPeriod='hoy', centerView='tiempos', juntaAuto=null, resumeTarget=null;
 let newRecur=[], recEditTask=null;
 const DOW=['','L','M','M','J','V','S','D'];                     // ISO 1=lun..7=dom
 const DOWFULL=['','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
@@ -918,6 +918,10 @@ function personalOpen(){return entries.find(e=>!e.ended_at&&(e.kind==='descanso'
 function anyOpen(){return entries.some(e=>!e.ended_at);}
 function lastPausedTaskId(){const paused=tasks.filter(t=>t.estado==='pausada'&&!t.parent_task_id);if(!paused.length)return null;
   let best=null,bt=0;paused.forEach(t=>{let mx=0;entries.forEach(e=>{if(e.kind==='task'&&e.task_id===t.id&&e.ended_at){const x=new Date(e.ended_at).getTime();if(x>mx)mx=x;}});if(mx>bt){bt=mx;best=t.id;}});return best;}
+// la tarea NORMAL que estás haciendo justo ahora (entrada abierta), o null si estás libre
+function focusedTaskId(){ const e=entries.find(x=>!x.ended_at&&x.kind==='task'&&!isPar(x.task_id)); return e?e.task_id:null; }
+// reanuda EXACTAMENTE la tarea que traías al entrar a un bucket (si sigue pausada); si venías libre, no agarra nada
+async function resumeLastTask(){ const rt=resumeTarget; resumeTarget=null; if(!rt)return false; const t=tasks.find(x=>x.id===rt); if(t&&t.estado==='pausada'){ await startTask(rt); return true; } return false; }
 function liveDelta(){return liveOf(active);}
 function projSecToday(p){let s=closedSecToday(p.id);entries.forEach(e=>{if(!e.ended_at&&e.kind==='task'&&e.project_id===p.id)s+=liveOf(e);});return s;}
 function otrosSecToday(){return closedOtrosToday()+liveOf(otrosOpen());}
@@ -946,8 +950,8 @@ function generalSecToday(){const ts=todayStartISO();let s=entries.filter(x=>x.en
 // Trabajo general / correo = bucket de trabajo para lo pequeño y simultáneo, sin micro-registrar. CUENTA como trabajo.
 async function toggleGeneral(){
   const g=generalOpen();
-  if(g){ await endEntry(g); toast("📨 Trabajo general detenido"); const rid=lastPausedTaskId(); if(rid){ await startTask(rid); return; } }
-  else{ await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'general',label:'TRABAJO GENERAL',started_at:nowISO()}); toast("📨 Trabajo general — capturando tiempo (correo, pendientes chicos)"); }
+  if(g){ await endEntry(g); toast("📨 Trabajo general detenido"); if(await resumeLastTask())return; }
+  else{ resumeTarget=focusedTaskId(); await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'general',label:'TRABAJO GENERAL',started_at:nowISO()}); toast("📨 Trabajo general — capturando tiempo (correo, pendientes chicos)"); }
   await refresh(); paintOtros(); }
 // ===== JUNTAS AUTOMÁTICAS: cuando una reunión del calendario está en curso, corre un cronómetro solo =====
 function meetingNow(){ const now=Date.now(); return meetings.find(m=>!m.all_day&&m.inicio&&m.fin&&new Date(m.inicio).getTime()<=now&&now<=new Date(m.fin).getTime())||null; }
@@ -1002,15 +1006,15 @@ async function addSubtask(parentId){ const tk=tasks.find(x=>x.id===parentId); if
   toast("＋ Sub-tarea agregada"); await refresh(); }
 async function toggleOtros(){
   const oo=otrosOpen();
-  if(oo){ await endEntry(oo); toast("OTROS detenido"); const rid=lastPausedTaskId(); if(rid){ await startTask(rid); return; } }
-  else{ await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'otros',label:'OTROS',started_at:nowISO()}); toast("◉ OTROS activo"); }
+  if(oo){ await endEntry(oo); toast("OTROS detenido"); if(await resumeLastTask())return; }
+  else{ resumeTarget=focusedTaskId(); await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'otros',label:'OTROS',started_at:nowISO()}); toast("◉ OTROS activo"); }
   await refresh(); paintOtros(); }
 // Descanso / Lunch = tiempo PERSONAL neutral (no cuenta como trabajo ni como OTROS). Al terminar, reanuda la última tarea.
 async function togglePersonal(kind){
   const cur=personalOpen();
   if(cur){ await endEntry(cur);
-    if(cur.kind===kind){ toast((kind==='lunch'?'🍽 Lunch':'☕ Descanso')+' terminado'); const rid=lastPausedTaskId(); if(rid){ await startTask(rid); return; } await refresh(); paintOtros(); return; }
-  } else { await pauseOthers(null); }
+    if(cur.kind===kind){ toast((kind==='lunch'?'🍽 Lunch':'☕ Descanso')+' terminado'); if(await resumeLastTask())return; await refresh(); paintOtros(); return; }
+  } else { resumeTarget=focusedTaskId(); await pauseOthers(null); }
   await sb.from('cmo_time_entry').insert({kind,label:(kind==='lunch'?'LUNCH':'DESCANSO'),started_at:nowISO()});
   toast(kind==='lunch'?'🍽 En lunch — disfruta':'☕ En descanso — tómate tu tiempo'); await refresh(); paintOtros(); }
 // Auto-pausa por inactividad real (sin clicks/teclas 20 min): detiene el cronómetro para no "contar de más" si te alejas.
