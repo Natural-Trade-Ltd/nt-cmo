@@ -145,6 +145,30 @@
   .pstate:hover{color:var(--ink);border-color:var(--border-soft)}
   .pstate.active{background:#26314a;border-color:#5b74b0;color:#cfe0ff}
   :root.light .pstate.active{background:#dce8ff;border-color:#89a7e0;color:#20386b}
+  .pstate.work{color:#66c2a0;border-color:color-mix(in srgb,#66c2a0 30%,var(--border))}
+  .pstate.work.active{background:#173a2c;border-color:#57b083;color:#a7e6c8}
+  :root.light .pstate.work.active{background:#d8f2e5;border-color:#79c8a2;color:#1c5a3f}
+  .filtrow{display:flex;align-items:center;gap:8px;padding:2px 2px 6px}
+  .filtsel{flex:1;background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:7px 9px;font-size:12.5px;font-family:inherit}
+  .mtperiod{display:flex;gap:6px;margin-bottom:12px}
+  .mtp{background:var(--panel-3);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+  .mtp.on{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+  .mttotal{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+  .mtv{font-size:32px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1}
+  .mtl{font-size:12px;color:var(--muted)}
+  .mtbars{display:flex;flex-direction:column;gap:10px}
+  .mtbar .mtbh{display:flex;justify-content:space-between;font-size:12px;color:var(--ink);margin-bottom:4px}
+  .mtbar .mtbh b{font-variant-numeric:tabular-nums;color:var(--muted)}
+  .mttrack{height:8px;background:var(--panel-3);border-radius:99px;overflow:hidden}
+  .mtfill{height:100%;border-radius:99px;transition:width .4s}
+  .mtchips{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
+  .mtchip{font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;border:1px solid}
+  .mtchip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+  .mtchip.esp{color:#e0b25b;border-color:rgba(224,178,91,.35);background:rgba(224,178,91,.12)}
+  .mtchip.pers{color:#a9c1ff;border-color:rgba(140,165,225,.35);background:rgba(140,165,225,.12)}
+  .mtnote{margin-top:16px;font-size:11px;color:var(--faint);line-height:1.5;border-top:1px solid var(--border);padding-top:12px}
+  .archrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12px}
+  .archrow small{color:var(--muted)}
   .task.waiting .title{color:#c79433}
   .subcount{font-size:10px;padding:2px 7px;border-radius:999px;background:#16241c;color:var(--good);border:1px solid var(--good-dim);white-space:nowrap}
   .espbadge{font-size:10px;padding:2px 7px;border-radius:999px;background:#2a2110;color:#e0b25b;border:1px solid #5a4620;font-family:var(--mono);white-space:nowrap}
@@ -448,13 +472,13 @@
       <span class="ol">Resp.</span><select id="newResp" class="miniSel" title="Responsable"></select>
       <span class="ol">Vence</span><input type="date" id="newDue" class="miniDate" title="Fecha límite">
     </div>
+    <div class="filtrow"><span class="ol">Ver</span><select id="filterSel" class="filtsel" title="Filtrar por categoría"></select></div>
     <div class="scroll" id="taskList"></div>
   </div>
 
   <div class="panel center">
-    <header><span class="ic">◩</span><span class="h">Proyecto / Categoría</span><span class="count" id="projCount"></span></header>
-    <div class="filterbar" id="filterBar"></div>
-    <div class="scroll" style="padding:0"><div class="projgrid" id="projGrid"></div></div>
+    <header><span class="ic">⏱</span><span class="h">Mis tiempos</span><span class="count" id="mtCount"></span></header>
+    <div class="scroll" id="mtScroll" style="padding:12px"><div id="misTiempos"></div></div>
   </div>
 
   <div class="right">
@@ -484,6 +508,7 @@
       <div class="otime" id="oTime">00:00:00</div>
     </div>
     <div class="pstates">
+      <button class="pstate work" id="genBtn" title="Trabajo general / correo — captura lo pequeño y simultáneo sin crear tareas (cuenta como trabajo)">📨 General</button>
       <button class="pstate" id="descBtn" title="Descanso — tiempo personal, sin problema">☕ Descanso</button>
       <button class="pstate" id="lunchBtn" title="Lunch — tu tiempo de comida">🍽 Lunch</button>
     </div>
@@ -637,6 +662,7 @@ function localDate(){const d=new Date();return d.getFullYear()+"-"+String(d.getM
 
 let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null, meetings=[], calConnected=false;
 let active=null, filter="all", selProj=null, toastT, ticking=false, lastAct=Date.now(), lastInteract=Date.now();
+let mtPeriod='hoy', centerView='tiempos';
 let newRecur=[], recEditTask=null;
 const DOW=['','L','M','M','J','V','S','D'];                     // ISO 1=lun..7=dom
 const DOWFULL=['','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
@@ -899,7 +925,7 @@ function isCompleted(t){return isWeekly(t)?doneToday(t):(t.estado==='completada'
 function taskEsperaSec(t){let s=entries.filter(x=>x.ended_at&&x.kind==='espera'&&x.task_id===t.id).reduce((a,x)=>a+(x.seconds||0),0);
   if(t.estado==='en_espera'&&t.espera_desde)s+=Math.max(0,(Date.now()-new Date(t.espera_desde).getTime())/1000);return s;}
 function fmtDur(sec){sec=Math.max(0,Math.floor(sec));const d=Math.floor(sec/86400),h=Math.floor(sec%86400/3600),m=Math.floor(sec%3600/60);return d>0?(d+'d '+h+'h'):(h>0?(h+'h '+m+'m'):(m+'m'));}
-function totalWorkToday(){return projects.reduce((a,p)=>a+projSecToday(p),0);}
+function totalWorkToday(){return projects.reduce((a,p)=>a+projSecToday(p),0)+generalSecToday();}
 
 // ===== ACTIONS =====
 async function endEntry(e){ if(e&&!e.ended_at) await sb.from('cmo_time_entry').update({ended_at:nowISO()}).eq('id',e.id); }
@@ -908,8 +934,17 @@ async function pauseOthers(exceptId){
   for(const e of entries.filter(x=>!x.ended_at&&x.kind==='task')){
     if(e.task_id!==exceptId && !isPar(e.task_id)){ await endEntry(e); await sb.from('cmo_task').update({estado:'pausada'}).eq('id',e.task_id); }
   }
-  const oo=otrosOpen(); if(oo)await endEntry(oo);
+  // detén cualquier bucket abierto (OTROS / Trabajo general / Descanso / Lunch) — estados mutuamente excluyentes
+  for(const e of entries.filter(x=>!x.ended_at&&(x.kind==='otros'||x.kind==='general'||x.kind==='descanso'||x.kind==='lunch'))){ await endEntry(e); }
 }
+function generalOpen(){return entries.find(e=>!e.ended_at&&e.kind==='general')||null;}
+function generalSecToday(){const ts=todayStartISO();let s=entries.filter(x=>x.ended_at&&x.kind==='general'&&x.started_at>=ts).reduce((a,x)=>a+(x.seconds||0),0);const g=generalOpen();if(g)s+=liveOf(g);return s;}
+// Trabajo general / correo = bucket de trabajo para lo pequeño y simultáneo, sin micro-registrar. CUENTA como trabajo.
+async function toggleGeneral(){
+  const g=generalOpen();
+  if(g){ await endEntry(g); toast("📨 Trabajo general detenido"); const rid=lastPausedTaskId(); if(rid){ await startTask(rid); return; } }
+  else{ await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'general',label:'TRABAJO GENERAL',started_at:nowISO()}); toast("📨 Trabajo general — capturando tiempo (correo, pendientes chicos)"); }
+  await refresh(); paintOtros(); }
 async function startTask(id){ const tk=tasks.find(x=>x.id===id); if(!tk||tk.estado==='completada')return;
   if(!tk.paralelo) await pauseOthers(id);          // normal: pausa las demás normales (las paralelas siguen)
   if(tk.espera_desde)await closeEspera(tk);
@@ -991,16 +1026,17 @@ function tick(){renderClock();renderNow();refreshLive();jClock();updatePip();}
 function renderTopStats(){$("#topWork").textContent=fmtHM(totalWorkToday());$("#topOtros").textContent=fmtHM(otrosSecToday());
   const meEmail=me&&me.email;const pend=tasks.filter(t=>!t.parent_task_id&&(t.owner_id===(me&&me.id)||t.responsable_email===meEmail)&&isPendingNow(t)).length;$("#topPend").textContent=pend;$("#pendCount").textContent=pend+" activas";}
 function renderNow(){const pill=$("#nowpill"),txt=$("#nowTxt"),tt=$("#nowT");pill.className="nowpill";
-  const pers=personalOpen();
+  const pers=personalOpen(),gen=generalOpen();
   if(pers){txt.textContent=(pers.kind==='lunch'?'En lunch':'En descanso');tt.textContent=fmt(liveOf(pers));}
+  else if(gen){pill.classList.add("run");txt.textContent="Trabajo general (correo / varios)";tt.textContent=fmt(generalSecToday());}
   else if(active&&active.kind==='task'){const tk=tasks.find(x=>x.id===active.task_id);pill.classList.add("run");txt.textContent=tk?tk.titulo:active.label;tt.textContent=fmt(taskSec({id:active.task_id}));}
   else if(active&&active.kind==='otros'){pill.classList.add("otros");txt.textContent="OTROS (no planeado)";tt.textContent=fmt(otrosSecToday());}
   else{txt.textContent="Sin cronómetro activo";tt.textContent="00:00:00";}}
 function refreshLive(){
   entries.forEach(e=>{ if(!e.ended_at&&e.kind==='task'){ const el=document.querySelector('.task[data-id="'+e.task_id+'"] .elapsed'); if(el){const tk=tasks.find(x=>x.id===e.task_id); if(tk)el.textContent=fmt(taskSec(tk));} } });
   $("#oTime").textContent=fmt(otrosSecToday());
-  projects.forEach(p=>{const v=document.querySelector('.pcard[data-id="'+p.id+'"] .ptime .val');if(v)v.textContent=fmtHM(projSecToday(p));});
-  renderBars();renderDayTotal();renderTopStats();}
+  renderBars();renderDayTotal();renderTopStats();
+  if(centerView==='tiempos')renderMisTiempos();}
 function taskRow(t,isSub){const p=proj(t.project_id);const dom=p?DOMAINS[p.dominio]:{name:'—',color:'#34483c',dim:'#1a2620'};
   const done=isDoneNow(t), running=t.estado==='en_progreso', waiting=t.estado==='en_espera', paused=t.estado==='pausada';
   const div=document.createElement("div");div.className="task"+(running?" running":"")+(paused?" paused":"")+(done?" done":"")+(waiting?" waiting":"")+(isSub?" sub":"");
@@ -1074,6 +1110,55 @@ function renderFilters(){const bar=$("#filterBar");bar.innerHTML="";
   mk("all","Todos");Object.keys(DOMAINS).forEach(k=>{if(projects.some(p=>!p.archivado&&p.dominio===k))mk(k,DOMAINS[k].name);});
   const na=projects.filter(p=>p.archivado).length;
   if(na){const b=document.createElement("button");b.className="chip"+(filter==='archived'?" on":"");b.style.marginLeft="auto";b.textContent="🗄 Archivados ("+na+")";b.addEventListener("click",()=>{filter='archived';selProj=null;renderAll();});bar.appendChild(b);}}
+// ===== PANEL CENTRAL «Mis tiempos» (métricas personales) + dropdown de categoría =====
+function renderCenter(){ if(centerView==='archived')renderArchivedList(); else renderMisTiempos(); }
+function renderMisTiempos(){
+  const el=$("#misTiempos"); if(!el)return;
+  const from = mtPeriod==='semana'?weekStartISO():todayStartISO();
+  const byDom={}; let general=0,otros=0,espera=0,personal=0;
+  entries.forEach(e=>{ if(e.ended_at&&e.started_at<from)return; const s=e.ended_at?(e.seconds||0):liveOf(e);
+    if(e.kind==='task'){const p=proj(e.project_id);const dom=p?p.dominio:'personal';byDom[dom]=(byDom[dom]||0)+s;}
+    else if(e.kind==='general')general+=s; else if(e.kind==='otros')otros+=s; else if(e.kind==='espera')espera+=s;
+    else if(e.kind==='descanso'||e.kind==='lunch')personal+=s; });
+  const work=Object.values(byDom).reduce((a,b)=>a+b,0)+general;
+  const max=Math.max(1,...Object.values(byDom),general);
+  const doms=Object.keys(byDom).sort((a,b)=>byDom[b]-byDom[a]);
+  let h='<div class="mtperiod"><button class="mtp'+(mtPeriod==='hoy'?' on':'')+'" data-p="hoy">Hoy</button><button class="mtp'+(mtPeriod==='semana'?' on':'')+'" data-p="semana">Semana</button></div>';
+  h+='<div class="mttotal"><div class="mtv">'+fmtH(work)+'</div><div class="mtl">trabajo '+(mtPeriod==='semana'?'esta semana':'de hoy')+'</div></div>';
+  h+='<div class="mtbars">';
+  doms.forEach(k=>{const d=DOMAINS[k]||{name:k,color:'#57b083'};const v=byDom[k];
+    h+='<div class="mtbar"><div class="mtbh"><span>'+esc(d.name)+'</span><b>'+fmtHM(v)+'</b></div><div class="mttrack"><div class="mtfill" style="width:'+(100*v/max).toFixed(1)+'%;background:'+d.color+'"></div></div></div>';});
+  if(general>0)h+='<div class="mtbar"><div class="mtbh"><span>📨 Trabajo general</span><b>'+fmtHM(general)+'</b></div><div class="mttrack"><div class="mtfill" style="width:'+(100*general/max).toFixed(1)+'%;background:#66c2a0"></div></div></div>';
+  if(!doms.length&&!general)h+='<div class="empty" style="padding:14px 4px">Aún sin tiempo registrado. Dale ▶ a una tarea, o usa 📨 Trabajo general para lo pequeño.</div>';
+  h+='</div><div class="mtchips">';
+  if(otros>0)h+='<span class="mtchip warn">◉ OTROS '+fmtHM(otros)+'</span>';
+  if(espera>0)h+='<span class="mtchip esp">⏳ Espera '+fmtHM(espera)+'</span>';
+  if(personal>0)h+='<span class="mtchip pers">☕ Personal '+fmtHM(personal)+'</span>';
+  h+='</div><div class="mtnote">Tus tiempos son <b>tuyos</b> — para organizarte, no para vigilar. La espera y el tiempo personal no cuentan como trabajo.</div>';
+  el.innerHTML=h;
+  el.querySelectorAll('.mtp').forEach(b=>b.addEventListener('click',()=>{mtPeriod=b.dataset.p;renderMisTiempos();}));
+}
+function renderArchivedList(){
+  const el=$("#misTiempos"); if(!el)return; const arch=projects.filter(p=>p.archivado);
+  let h='<div class="mtperiod"><button class="mtp" data-back="1">← Mis tiempos</button><button class="mtp on">🗄 Archivados</button></div>';
+  if(!arch.length)h+='<div class="empty" style="padding:14px 4px">No hay categorías archivadas.</div>';
+  else h+=arch.map(p=>{const d=DOMAINS[p.dominio]||{name:p.dominio,color:'#34483c'};
+    return '<div class="archrow"><span><b>'+esc(p.nombre)+'</b><br><small>'+esc(d.name)+'</small></span><button class="mtp" data-restore="'+p.id+'">♻ Restaurar</button></div>';}).join('');
+  el.innerHTML=h;
+  const bk=el.querySelector('[data-back]'); if(bk)bk.addEventListener('click',()=>{centerView='tiempos';renderAll();});
+  el.querySelectorAll('[data-restore]').forEach(b=>b.addEventListener('click',()=>restoreProject(b.dataset.restore)));
+}
+function renderFilterSel(){
+  const s=$("#filterSel"); if(!s)return;
+  const tops=projects.filter(p=>!p.archivado&&!p.parent_id).sort((a,b)=>(a.sort||0)-(b.sort||0));
+  let h='<option value="all">Todas las categorías</option>';
+  tops.forEach(p=>{ h+='<option value="p:'+p.id+'">'+esc(p.nombre)+'</option>';
+    projects.filter(x=>!x.archivado&&x.parent_id===p.id).forEach(x=>{ h+='<option value="p:'+x.id+'">— '+esc(x.nombre)+'</option>'; }); });
+  const na=projects.filter(p=>p.archivado).length;
+  if(na)h+='<option value="__arch">🗄 Archivados ('+na+')</option>';
+  s.innerHTML=h;
+  s.value = centerView==='archived'?'__arch':(selProj?('p:'+selProj):'all');
+}
 function renderMail(){const list=$("#mailList");list.innerHTML="";
   if(!mails.length){list.innerHTML='<div class="empty">Sin correos por responder.<br>En fase 2 se conecta tu folder «1: to respond» de Gmail.</div>';$("#mailCount").textContent="0";return;}
   mails.forEach(m=>{const d=document.createElement("div");d.className="mail"+(m.status==='unread'?" unread":"");
@@ -1116,10 +1201,11 @@ function renderNowSelect(){const sel=$("#newProj");const cur=sel.value;sel.inner
   if(selProj&&projects.some(p=>p.id===selProj))sel.value=selProj;else if(cur&&cur!=='__new__')sel.value=cur;}
 function paintOtros(){const on=!!otrosOpen();const ob=$("#otrosBtn");ob.classList.toggle("active",on);ob.setAttribute("aria-pressed",on?"true":"false");
   $("#oTxt").textContent=on?"EN OTROS…":"OTROS";$("#oIcon").textContent=on?"■":"◉";
-  const pers=personalOpen();const db=$("#descBtn"),lb=$("#lunchBtn");
+  const pers=personalOpen();const db=$("#descBtn"),lb=$("#lunchBtn"),gb=$("#genBtn");
   if(db)db.classList.toggle("active",!!pers&&pers.kind==='descanso');
-  if(lb)lb.classList.toggle("active",!!pers&&pers.kind==='lunch');}
-function renderAll(){renderNowSelect();fillResp();fillViewAs();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderAgenda();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
+  if(lb)lb.classList.toggle("active",!!pers&&pers.kind==='lunch');
+  if(gb)gb.classList.toggle("active",!!generalOpen());}
+function renderAll(){renderNowSelect();fillResp();fillViewAs();renderTasks();renderCenter();renderFilterSel();renderMail();renderNS();renderColas();renderAgenda();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
 function fmtEventTime(ini){ if(!ini)return''; if(!(''+ini).includes('T'))return 'Todo el día';
   try{ return new Date(ini).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} }
 function renderAgenda(){const el=$("#agendaList");if(!el)return;
@@ -1160,6 +1246,12 @@ $("#catSave").addEventListener("click",async()=>{const nombre=$("#catName").valu
 const ob=$("#otrosBtn");ob.addEventListener("click",toggleOtros);ob.addEventListener("keydown",e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleOtros();}});
 $("#descBtn")&&$("#descBtn").addEventListener("click",()=>togglePersonal('descanso'));
 $("#lunchBtn")&&$("#lunchBtn").addEventListener("click",()=>togglePersonal('lunch'));
+$("#genBtn")&&$("#genBtn").addEventListener("click",toggleGeneral);
+$("#filterSel")&&$("#filterSel").addEventListener("change",e=>{const v=e.target.value;
+  if(v==='all'){filter='all';selProj=null;centerView='tiempos';}
+  else if(v==='__arch'){centerView='archived';selProj=null;}
+  else if(v.slice(0,2)==='p:'){selProj=v.slice(2);centerView='tiempos';}
+  renderAll();});
 function applyTheme(t){document.documentElement.classList.toggle('light',t==='light');const b=$("#themeBtn");if(b)b.textContent=(t==='light'?'🌙':'☀');}
 applyTheme(localStorage.getItem('cmo_theme')||'dark');
 $("#themeBtn").addEventListener("click",async()=>{const next=document.documentElement.classList.contains('light')?'dark':'light';localStorage.setItem('cmo_theme',next);applyTheme(next);if(me){me.tema=next;await sb.from('cmo_user').update({tema:next}).eq('id',me.id);}});
@@ -1430,10 +1522,11 @@ async function openPip(){
 function updatePip(){
   if(!pipWin) return; const d=pipWin.document; const card=d.getElementById('pipCard'); if(!card) return;
   d.documentElement.className=document.documentElement.className;
-  const pers=personalOpen();
-  const fid=(!pers&&active&&active.kind==='task')?active.task_id:null;
+  const pers=personalOpen(),gen=generalOpen();
+  const fid=(!pers&&!gen&&active&&active.kind==='task')?active.task_id:null;
   let name='Sin actividad', time='00:00:00', mode='idle';
   if(pers){ name=(pers.kind==='lunch'?'🍽 En lunch':'☕ En descanso'); time=fmt(liveOf(pers)); mode='idle'; }
+  else if(gen){ name='📨 Trabajo general'; time=fmt(generalSecToday()); mode='run'; }
   else if(fid){ const tk=tasks.find(x=>x.id===fid); name=tk?tk.titulo:(active.label||'Tarea'); time=fmt(taskSec({id:fid})); mode='run'; }
   else if(active&&active.kind==='otros'){ name='OTROS · interrupción'; time=fmt(otrosSecToday()); mode='otros'; }
   d.getElementById('pipName').textContent=name;
