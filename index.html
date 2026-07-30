@@ -1527,15 +1527,39 @@ body{background:#0a120d}
 .light .card.idle .timer{color:#9db3a5}
 .light .oitem{background:rgba(0,0,0,.035);border-color:rgba(0,0,0,.08)}
 .light .oitem:hover{background:rgba(0,0,0,.07)}
-.light .otime,.light .obtn{color:#5c7466}`;
-const PIP_HTML=`<div class="card idle" id="pipCard"><div class="top"><div class="name" id="pipName">Sin actividad</div><div class="count" id="pipCount">0 pend</div></div><div class="timer" id="pipTimer">00:00:00</div><div class="frow" id="pipFRow"><button class="mbtn pause" id="pipPause" title="Pausar">⏸</button><button class="mbtn esp" id="pipEsp" title="No está en mi cancha (en espera)">⏳</button><button class="mbtn done2" id="pipDone" title="Terminar y volver al portal">✓ Terminar</button></div><div class="others" id="pipOthers"></div><div class="foot"><button class="pbtn otros" id="pipOtros">◉ OTROS</button><button class="pbtn open" id="pipOpen">▸ Portal</button></div></div>`;
+.light .otime,.light .obtn{color:#5c7466}
+.padd{display:flex;gap:5px;margin:4px 0}
+.padd input{flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:8px;color:inherit;padding:7px 9px;font-size:12px;font-family:inherit;outline:none}
+.padd input:focus{border-color:#57b083}
+.light .padd input{background:rgba(0,0,0,.04);border-color:rgba(0,0,0,.1)}
+.padd button{flex:none;width:32px;border:none;border-radius:8px;background:#57b083;color:#04130a;font-size:16px;font-weight:800;cursor:pointer}
+.plist{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.pitem{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07);border-radius:7px;padding:5px 7px}
+.pitem.run{box-shadow:inset 2px 0 0 #57b083}
+.pitem.pause{box-shadow:inset 2px 0 0 #cdb26a}
+.light .pitem{background:rgba(0,0,0,.035);border-color:rgba(0,0,0,.08)}
+.pnm{flex:1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptm{font-size:10.5px;font-variant-numeric:tabular-nums;color:#9fb6a8;font-weight:700}
+.light .ptm{color:#5c7466}
+.pbx{border:none;background:transparent;color:#9fb6a8;font-size:13px;cursor:pointer;padding:1px 3px;border-radius:5px}
+.pbx:hover{background:rgba(255,255,255,.12);color:#eaf3ec}
+.light .pbx{color:#5c7466}
+.pbtn.work{flex:none;min-width:36px;background:rgba(102,194,160,.18);color:#8fe0bf;border:1px solid rgba(102,194,160,.35)}
+.pbtn.work.on{background:#173a2c;color:#a7e6c8}
+.pbtn.open{flex:none;min-width:34px}`;
+const PIP_HTML=`<div class="card idle" id="pipCard"><div class="top"><div class="name" id="pipName">Sin actividad</div><div class="count" id="pipCount">0 pend</div></div><div class="timer" id="pipTimer">00:00:00</div><div class="frow" id="pipFRow"><button class="mbtn pause" id="pipPause" title="Pausar">⏸</button><button class="mbtn esp" id="pipEsp" title="No está en mi cancha (en espera)">⏳</button><button class="mbtn done2" id="pipDone" title="Terminar y volver al portal">✓ Terminar</button></div><div class="padd"><input id="pipNew" placeholder="＋ Nueva actividad…" autocomplete="off"><button id="pipAdd" title="Agregar">＋</button></div><div class="plist" id="pipList"></div><div class="foot"><button class="pbtn otros" id="pipOtros">◉ OTROS</button><button class="pbtn work" id="pipGen" title="Trabajo general / correo">📨</button><button class="pbtn open" id="pipOpen" title="Abrir el portal completo">▸</button></div></div>`;
 let pipOthersSig='';
 function pipToggle(id){ const t=tasks.find(x=>x.id===id); if(!t)return; if(t.estado==='en_progreso')pauseTask(id); else startTask(id); }
 function fmtShort(sec){sec=Math.max(0,Math.floor(sec));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return h>0?(h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')):(String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'));}
+async function pipQuickAdd(title){ title=(title||'').trim(); if(!title)return;
+  const p=projects.filter(x=>!x.archivado&&!x.parent_id).sort((a,b)=>(a.sort||0)-(b.sort||0))[0];
+  await sb.from('cmo_task').insert({project_id:p?p.id:null,titulo:title,estado:'pendiente',sort:0,responsable_email:(me&&me.email)||null});
+  toast("＋ Agregada: "+title); await refresh(); }
+async function pipAddNow(pw){ const inp=pw.document.getElementById('pipNew'); if(!inp)return; const v=inp.value; inp.value=''; await pipQuickAdd(v); try{inp.focus();}catch(e){} }
 async function openPip(){
   if(!('documentPictureInPicture' in window)){ toast("Tu navegador no soporta la ventana flotante siempre-visible. Usa Chrome o Edge."); return; }
   if(pipWin){ try{pipWin.focus();}catch(e){} return; }
-  let pw; try{ pw=await documentPictureInPicture.requestWindow({width:282,height:300}); }
+  let pw; try{ pw=await documentPictureInPicture.requestWindow({width:288,height:368}); }
   catch(e){ toast("No se pudo abrir la ventana flotante."); return; }
   pipWin=pw; pipOthersSig='';
   const st=pw.document.createElement('style'); st.textContent=PIP_CSS; pw.document.head.appendChild(st);
@@ -1546,6 +1570,9 @@ async function openPip(){
   g('pipPause').addEventListener('click',()=>{ if(active&&active.kind==='task')pauseTask(active.task_id); });
   g('pipEsp').addEventListener('click',()=>{ if(active&&active.kind==='task')setEspera(active.task_id,true); });
   g('pipDone').addEventListener('click',async()=>{ if(active&&active.kind==='task'){ try{await finishTask(active.task_id);}catch(e){} } try{window.focus();}catch(e){} });
+  g('pipGen').addEventListener('click',()=>toggleGeneral());
+  g('pipAdd').addEventListener('click',()=>pipAddNow(pw));
+  g('pipNew').addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); pipAddNow(pw); } });
   pw.addEventListener('pagehide',()=>{ pipWin=null; const b=$("#pipBtn"); if(b)b.classList.remove('on'); });
   const b=$("#pipBtn"); if(b)b.classList.add('on');
   updatePip();
@@ -1567,18 +1594,20 @@ function updatePip(){
   const meEmail=me&&me.email; const pend=tasks.filter(x=>!x.parent_task_id&&(x.owner_id===(me&&me.id)||x.responsable_email===meEmail)&&isPendingNow(x)).length;
   d.getElementById('pipCount').textContent=pend+' pend';
   d.getElementById('pipFRow').style.display=fid?'flex':'none';
-  const on=!!otrosOpen(); const ob=d.getElementById('pipOtros'); ob.textContent=on?'■ Detener':'◉ OTROS'; ob.className='pbtn otros'+(on?' on':'');
-  // otras actividades activas (en curso o en pausa) menos la enfocada
-  const others=tasks.filter(t=>!t.parent_task_id&&(t.estado==='en_progreso'||t.estado==='pausada')&&t.id!==fid);
-  const box=d.getElementById('pipOthers'); const sig=others.map(t=>t.id+':'+t.estado).join('|');
+  const on=!!otrosOpen(); const ob=d.getElementById('pipOtros'); ob.textContent=on?'■':'◉ OTROS'; ob.className='pbtn otros'+(on?' on':'');
+  const gb=d.getElementById('pipGen'); if(gb)gb.className='pbtn work'+(gen?' on':'');
+  // LISTA COMPLETA de mis pendientes: agregar, ▶ iniciar, ⏸ pausar, ✓ terminar desde aquí (sticky note)
+  const rk=t=>t.estado==='en_progreso'?0:(t.estado==='pausada'?1:2);
+  const mine=tasks.filter(t=>!t.parent_task_id&&(t.owner_id===(me&&me.id)||x_resp(t))&&isPendingNow(t)).sort((a,b)=>rk(a)-rk(b));
+  const box=d.getElementById('pipList'); const sig=mine.map(t=>t.id+':'+t.estado+':'+esc(t.titulo)).join('|');
   if(sig!==pipOthersSig){
     pipOthersSig=sig;
-    box.innerHTML=others.length?('<div class="olbl">Otras activas · toca para volver</div>'+others.map(t=>{const run=t.estado==='en_progreso';
-      return '<div class="oitem" data-id="'+t.id+'"><span class="odot '+(run?'run':'pause')+'"></span><span class="oname">'+esc(t.titulo)+'</span><span class="otime">'+fmtShort(taskSec(t))+'</span><button class="obtn" data-id="'+t.id+'" title="'+(run?'Pausar':'Reanudar')+'">'+(run?'⏸':'▶')+'</button></div>';}).join('')):'';
-    box.querySelectorAll('.obtn').forEach(b=>b.addEventListener('click',ev=>{ev.stopPropagation();pipToggle(b.dataset.id);}));
-    box.querySelectorAll('.oitem').forEach(el=>el.addEventListener('click',()=>{const t=tasks.find(x=>x.id===el.dataset.id);if(t&&t.estado==='pausada')startTask(el.dataset.id);}));
-  } else { others.forEach(t=>{const el=box.querySelector('.oitem[data-id="'+t.id+'"] .otime');if(el)el.textContent=fmtShort(taskSec(t));}); }
+    box.innerHTML=mine.length?mine.map(t=>{const run=t.estado==='en_progreso',pau=t.estado==='pausada';
+      return '<div class="pitem'+(run?' run':pau?' pause':'')+'" data-id="'+t.id+'"><span class="pnm">'+esc(t.titulo)+'</span><span class="ptm">'+(taskSec(t)>0?fmtShort(taskSec(t)):'')+'</span><button class="pbx" data-a="tog" data-id="'+t.id+'" title="'+(run?'Pausar':'Iniciar')+'">'+(run?'⏸':'▶')+'</button><button class="pbx" data-a="fin" data-id="'+t.id+'" title="Terminar">✓</button></div>';}).join(''):'<div class="olbl" style="padding:8px 4px">Sin pendientes. Escribe uno arriba ↑</div>';
+    box.querySelectorAll('.pbx').forEach(b=>b.addEventListener('click',ev=>{ev.stopPropagation();const id=b.dataset.id;if(b.dataset.a==='tog')pipToggle(id);else finishTask(id);}));
+  } else { mine.forEach(t=>{const el=box.querySelector('.pitem[data-id="'+t.id+'"] .ptm');if(el&&taskSec(t)>0)el.textContent=fmtShort(taskSec(t));}); }
 }
+function x_resp(t){ return t.responsable_email && me && t.responsable_email===me.email; }
 $("#pipBtn") && $("#pipBtn").addEventListener("click",openPip);
 $("#resumenBtn").addEventListener("click",openResumen);
 $("#switchBtn").addEventListener("click",()=>{location.href='https://natural-trade-ltd.github.io/nt-command-center/';});
