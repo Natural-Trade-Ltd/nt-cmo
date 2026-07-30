@@ -140,6 +140,11 @@
   .task.paused .elapsed{color:#cdb26a}
   .parbadge{font-size:10px;font-weight:700;color:#8fb4ff;background:rgba(120,150,220,.14);border:1px solid rgba(120,150,220,.32);padding:1px 7px;border-radius:999px;cursor:pointer}
   .pausebadge{font-size:10px;font-weight:700;color:#cdb26a;background:rgba(205,178,106,.14);border:1px solid rgba(205,178,106,.3);padding:1px 7px;border-radius:999px}
+  .pstates{display:flex;flex-direction:column;gap:6px;justify-content:center;flex:none}
+  .pstate{background:var(--panel-3);border:1px solid var(--border);color:var(--muted);border-radius:9px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:.15s}
+  .pstate:hover{color:var(--ink);border-color:var(--border-soft)}
+  .pstate.active{background:#26314a;border-color:#5b74b0;color:#cfe0ff}
+  :root.light .pstate.active{background:#dce8ff;border-color:#89a7e0;color:#20386b}
   .task.waiting .title{color:#c79433}
   .subcount{font-size:10px;padding:2px 7px;border-radius:999px;background:#16241c;color:var(--good);border:1px solid var(--good-dim);white-space:nowrap}
   .espbadge{font-size:10px;padding:2px 7px;border-radius:999px;background:#2a2110;color:#e0b25b;border:1px solid #5a4620;font-family:var(--mono);white-space:nowrap}
@@ -475,8 +480,12 @@
   <div class="bar">
     <div class="otros" id="otrosBtn" role="button" tabindex="0" aria-pressed="false">
       <div class="obtn" id="oIcon">◉</div>
-      <div class="oinfo"><div class="olbl">Distracción / no planeado</div><div class="otxt" id="oTxt">OTROS</div></div>
+      <div class="oinfo"><div class="olbl">No planeado / interrupción</div><div class="otxt" id="oTxt">OTROS</div></div>
       <div class="otime" id="oTime">00:00:00</div>
+    </div>
+    <div class="pstates">
+      <button class="pstate" id="descBtn" title="Descanso — tiempo personal, sin problema">☕ Descanso</button>
+      <button class="pstate" id="lunchBtn" title="Lunch — tu tiempo de comida">🍽 Lunch</button>
     </div>
     <div class="breakdown">
       <div class="bhead"><span>Tiempo por proyecto · hoy</span><span id="bkTotal"></span></div>
@@ -627,7 +636,7 @@ function weekStartISO(){const d=new Date();const day=(d.getDay()+6)%7;d.setDate(
 function localDate(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 
 let me=null, projects=[], tasks=[], entries=[], links=[], mails=[], nsm=[], att=null, meetings=[], calConnected=false;
-let active=null, filter="all", selProj=null, toastT, ticking=false, lastAct=Date.now();
+let active=null, filter="all", selProj=null, toastT, ticking=false, lastAct=Date.now(), lastInteract=Date.now();
 let newRecur=[], recEditTask=null;
 const DOW=['','L','M','M','J','V','S','D'];                     // ISO 1=lun..7=dom
 const DOWFULL=['','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
@@ -757,8 +766,8 @@ async function enterApp(session){
   if(me && !me.funciones_sembradas){ await materializeSeed(); }
   await refresh();
   await pollIncidents();
-  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); setInterval(checkAutoClose,60000);
-    ['click','keydown','pointerdown'].forEach(ev=>document.addEventListener(ev,()=>{lastAct=Date.now();},{passive:true})); }
+  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); setInterval(checkAutoClose,60000); setInterval(checkIdlePause,60000);
+    ['click','keydown','pointerdown'].forEach(ev=>document.addEventListener(ev,()=>{lastAct=Date.now();lastInteract=Date.now();},{passive:true})); }
   window.addEventListener('beforeunload',()=>{ try{ navigator.sendBeacon && jornadaBeat(); }catch(e){} });
 }
 
@@ -875,6 +884,10 @@ function openTaskEntry(id){return entries.find(e=>!e.ended_at&&e.kind==='task'&&
 function otrosOpen(){return entries.find(e=>!e.ended_at&&e.kind==='otros')||null;}
 function isPar(id){return !!(tasks.find(t=>t.id===id)||{}).paralelo;}
 function focusedEntry(){const oo=otrosOpen();if(oo)return oo;const n=entries.find(e=>!e.ended_at&&e.kind==='task'&&!isPar(e.task_id));if(n)return n;return entries.find(e=>!e.ended_at)||null;}
+function personalOpen(){return entries.find(e=>!e.ended_at&&(e.kind==='descanso'||e.kind==='lunch'))||null;}
+function anyOpen(){return entries.some(e=>!e.ended_at);}
+function lastPausedTaskId(){const paused=tasks.filter(t=>t.estado==='pausada'&&!t.parent_task_id);if(!paused.length)return null;
+  let best=null,bt=0;paused.forEach(t=>{let mx=0;entries.forEach(e=>{if(e.kind==='task'&&e.task_id===t.id&&e.ended_at){const x=new Date(e.ended_at).getTime();if(x>mx)mx=x;}});if(mx>bt){bt=mx;best=t.id;}});return best;}
 function liveDelta(){return liveOf(active);}
 function projSecToday(p){let s=closedSecToday(p.id);entries.forEach(e=>{if(!e.ended_at&&e.kind==='task'&&e.project_id===p.id)s+=liveOf(e);});return s;}
 function otrosSecToday(){return closedOtrosToday()+liveOf(otrosOpen());}
@@ -931,9 +944,24 @@ async function addSubtask(parentId){ const tk=tasks.find(x=>x.id===parentId); if
   toast("＋ Sub-tarea agregada"); await refresh(); }
 async function toggleOtros(){
   const oo=otrosOpen();
-  if(oo){ await endEntry(oo); toast("OTROS detenido"); }
+  if(oo){ await endEntry(oo); toast("OTROS detenido"); const rid=lastPausedTaskId(); if(rid){ await startTask(rid); return; } }
   else{ await pauseOthers(null); await sb.from('cmo_time_entry').insert({kind:'otros',label:'OTROS',started_at:nowISO()}); toast("◉ OTROS activo"); }
   await refresh(); paintOtros(); }
+// Descanso / Lunch = tiempo PERSONAL neutral (no cuenta como trabajo ni como OTROS). Al terminar, reanuda la última tarea.
+async function togglePersonal(kind){
+  const cur=personalOpen();
+  if(cur){ await endEntry(cur);
+    if(cur.kind===kind){ toast((kind==='lunch'?'🍽 Lunch':'☕ Descanso')+' terminado'); const rid=lastPausedTaskId(); if(rid){ await startTask(rid); return; } await refresh(); paintOtros(); return; }
+  } else { await pauseOthers(null); }
+  await sb.from('cmo_time_entry').insert({kind,label:(kind==='lunch'?'LUNCH':'DESCANSO'),started_at:nowISO()});
+  toast(kind==='lunch'?'🍽 En lunch — disfruta':'☕ En descanso — tómate tu tiempo'); await refresh(); paintOtros(); }
+// Auto-pausa por inactividad real (sin clicks/teclas 20 min): detiene el cronómetro para no "contar de más" si te alejas.
+async function checkIdlePause(){
+  const running=entries.filter(e=>!e.ended_at&&e.kind==='task'&&!isPar(e.task_id));
+  if(!running.length)return;
+  if(Date.now()-lastInteract < 20*60*1000)return;
+  for(const e of running){ await endEntry(e); await sb.from('cmo_task').update({estado:'pausada'}).eq('id',e.task_id); }
+  toast("⏸ Pausé tu cronómetro por inactividad — retómalo cuando sigas"); await refresh(); paintOtros(); }
 async function addTask(){ const inp=$("#newTask");let pid=$("#newProj").value;const title=inp.value.trim();if(!title)return;
   if(pid==='__new__'){toast("Elige o crea una categoría primero");return;}
   if(!pid){toast("Elige un proyecto / categoría");return;}
@@ -963,9 +991,11 @@ function tick(){renderClock();renderNow();refreshLive();jClock();updatePip();}
 function renderTopStats(){$("#topWork").textContent=fmtHM(totalWorkToday());$("#topOtros").textContent=fmtHM(otrosSecToday());
   const meEmail=me&&me.email;const pend=tasks.filter(t=>!t.parent_task_id&&(t.owner_id===(me&&me.id)||t.responsable_email===meEmail)&&isPendingNow(t)).length;$("#topPend").textContent=pend;$("#pendCount").textContent=pend+" activas";}
 function renderNow(){const pill=$("#nowpill"),txt=$("#nowTxt"),tt=$("#nowT");pill.className="nowpill";
-  if(active&&active.kind==='task'){const tk=tasks.find(x=>x.id===active.task_id);pill.classList.add("run");txt.textContent=tk?tk.titulo:active.label;tt.textContent=fmt(taskSec({id:active.task_id}));}
+  const pers=personalOpen();
+  if(pers){txt.textContent=(pers.kind==='lunch'?'En lunch':'En descanso');tt.textContent=fmt(liveOf(pers));}
+  else if(active&&active.kind==='task'){const tk=tasks.find(x=>x.id===active.task_id);pill.classList.add("run");txt.textContent=tk?tk.titulo:active.label;tt.textContent=fmt(taskSec({id:active.task_id}));}
   else if(active&&active.kind==='otros'){pill.classList.add("otros");txt.textContent="OTROS (no planeado)";tt.textContent=fmt(otrosSecToday());}
-  else{txt.textContent="Sin actividad";tt.textContent="00:00:00";}}
+  else{txt.textContent="Sin cronómetro activo";tt.textContent="00:00:00";}}
 function refreshLive(){
   entries.forEach(e=>{ if(!e.ended_at&&e.kind==='task'){ const el=document.querySelector('.task[data-id="'+e.task_id+'"] .elapsed'); if(el){const tk=tasks.find(x=>x.id===e.task_id); if(tk)el.textContent=fmt(taskSec(tk));} } });
   $("#oTime").textContent=fmt(otrosSecToday());
@@ -1014,7 +1044,7 @@ function renderTasks(){const list=$("#taskList");list.innerHTML="";
   else{show=show.filter(t=>{const p=proj(t.project_id);return p&&!p.archivado;});if(filter!=='all')show=show.filter(t=>(proj(t.project_id)||{}).dominio===filter);}
   show=show.filter(t=>schedToday(t));                    // recurrentes: solo en sus días
   show=show.filter(t=>!isDoneNow(t)||doneToday(t));      // ocultar completadas de días previos
-  const ord=t=>isDoneNow(t)?3:(t.estado==='en_progreso'?0:(t.estado==='pausada'?0.5:(t.estado==='en_espera'?1.5:1)));
+  const ord=t=>isDoneNow(t)?1:0;   // solo las completadas al final; el resto conserva su posición (solo cambia de color)
   const tops=show.filter(t=>!t.parent_task_id).sort((a,b)=>ord(a)-ord(b));
   if(!tops.length){const e=document.createElement("div");e.className="empty";e.innerHTML='Sin pendientes aquí.<br>Agrega uno arriba ↑';list.appendChild(e);return;}
   tops.forEach(t=>{list.appendChild(taskRow(t,false));
@@ -1085,7 +1115,10 @@ function renderNowSelect(){const sel=$("#newProj");const cur=sel.value;sel.inner
   const o=document.createElement("option");o.value="__new__";o.textContent="＋ Nueva categoría…";sel.appendChild(o);
   if(selProj&&projects.some(p=>p.id===selProj))sel.value=selProj;else if(cur&&cur!=='__new__')sel.value=cur;}
 function paintOtros(){const on=!!otrosOpen();const ob=$("#otrosBtn");ob.classList.toggle("active",on);ob.setAttribute("aria-pressed",on?"true":"false");
-  $("#oTxt").textContent=on?"EN OTROS…":"OTROS";$("#oIcon").textContent=on?"■":"◉";}
+  $("#oTxt").textContent=on?"EN OTROS…":"OTROS";$("#oIcon").textContent=on?"■":"◉";
+  const pers=personalOpen();const db=$("#descBtn"),lb=$("#lunchBtn");
+  if(db)db.classList.toggle("active",!!pers&&pers.kind==='descanso');
+  if(lb)lb.classList.toggle("active",!!pers&&pers.kind==='lunch');}
 function renderAll(){renderNowSelect();fillResp();fillViewAs();renderTasks();renderProjects();renderFilters();renderMail();renderNS();renderColas();renderAgenda();renderTopStats();renderNow();renderBars();renderDayTotal();paintOtros();paintJornada();}
 function fmtEventTime(ini){ if(!ini)return''; if(!(''+ini).includes('T'))return 'Todo el día';
   try{ return new Date(ini).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }catch(e){return '';} }
@@ -1125,6 +1158,8 @@ $("#catSave").addEventListener("click",async()=>{const nombre=$("#catName").valu
   if(error){$("#catMsg").textContent="Error: "+error.message;$("#catMsg").className="msg err";return;}
   $("#catModal").classList.add("hidden");toast(parent?"Subcategoría creada":"Categoría creada");await refresh();if(data&&data.id)$("#newProj").value=data.id;});
 const ob=$("#otrosBtn");ob.addEventListener("click",toggleOtros);ob.addEventListener("keydown",e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleOtros();}});
+$("#descBtn")&&$("#descBtn").addEventListener("click",()=>togglePersonal('descanso'));
+$("#lunchBtn")&&$("#lunchBtn").addEventListener("click",()=>togglePersonal('lunch'));
 function applyTheme(t){document.documentElement.classList.toggle('light',t==='light');const b=$("#themeBtn");if(b)b.textContent=(t==='light'?'🌙':'☀');}
 applyTheme(localStorage.getItem('cmo_theme')||'dark');
 $("#themeBtn").addEventListener("click",async()=>{const next=document.documentElement.classList.contains('light')?'dark':'light';localStorage.setItem('cmo_theme',next);applyTheme(next);if(me){me.tema=next;await sb.from('cmo_user').update({tema:next}).eq('id',me.id);}});
@@ -1395,9 +1430,11 @@ async function openPip(){
 function updatePip(){
   if(!pipWin) return; const d=pipWin.document; const card=d.getElementById('pipCard'); if(!card) return;
   d.documentElement.className=document.documentElement.className;
-  const fid=(active&&active.kind==='task')?active.task_id:null;
+  const pers=personalOpen();
+  const fid=(!pers&&active&&active.kind==='task')?active.task_id:null;
   let name='Sin actividad', time='00:00:00', mode='idle';
-  if(fid){ const tk=tasks.find(x=>x.id===fid); name=tk?tk.titulo:(active.label||'Tarea'); time=fmt(taskSec({id:fid})); mode='run'; }
+  if(pers){ name=(pers.kind==='lunch'?'🍽 En lunch':'☕ En descanso'); time=fmt(liveOf(pers)); mode='idle'; }
+  else if(fid){ const tk=tasks.find(x=>x.id===fid); name=tk?tk.titulo:(active.label||'Tarea'); time=fmt(taskSec({id:fid})); mode='run'; }
   else if(active&&active.kind==='otros'){ name='OTROS · interrupción'; time=fmt(otrosSecToday()); mode='otros'; }
   d.getElementById('pipName').textContent=name;
   d.getElementById('pipTimer').textContent=time;
