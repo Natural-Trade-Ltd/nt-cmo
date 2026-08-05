@@ -796,7 +796,7 @@ async function enterApp(session){
   if(me && !me.funciones_sembradas){ await materializeSeed(); }
   await refresh();
   await pollIncidents();
-  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); setInterval(checkAutoClose,60000); setInterval(checkIdlePause,60000); setInterval(checkMeetings,30000); checkMeetings();
+  if(!ticking){ ticking=true; setInterval(tick,1000); setInterval(refresh,60000); setInterval(()=>jornadaBeat(),180000); setInterval(pollIncidents,15000); setInterval(checkAutoClose,60000); setInterval(checkMeetings,30000); checkMeetings();
     ['click','keydown','pointerdown'].forEach(ev=>document.addEventListener(ev,()=>{lastAct=Date.now();lastInteract=Date.now();},{passive:true})); }
   window.addEventListener('beforeunload',()=>{ try{ navigator.sendBeacon && jornadaBeat(); }catch(e){} });
 }
