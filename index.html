@@ -863,7 +863,13 @@ async function jornadaOpen(){
   paintJornada();
 }
 async function jornadaBeat(){ if(att && !att.salida) await sb.from('cmo_attendance').update({last_beat:nowISO()}).eq('id',att.id); }
-async function jornadaClose(origen,at){ if(att && !att.salida){ const s=at||nowISO(); await sb.from('cmo_attendance').update({salida:s,origen_salida:origen}).eq('id',att.id); att.salida=s; paintJornada(); } }
+async function jornadaClose(origen,at){ if(att && !att.salida){ const s=at||nowISO();
+  // al terminar la jornada, cierra cualquier cronómetro abierto (tarea/otros/general/junta/descanso/lunch), capado a la salida
+  await sb.from('cmo_time_entry').update({ended_at:s}).is('ended_at',null).eq('owner_id',me.id);
+  await sb.from('cmo_task').update({estado:'pausada'}).eq('estado','en_progreso').eq('owner_id',me.id);
+  if(me&&me.email)await sb.from('cmo_task').update({estado:'pausada'}).eq('estado','en_progreso').eq('responsable_email',me.email);
+  await sb.from('cmo_attendance').update({salida:s,origen_salida:origen}).eq('id',att.id); att.salida=s;
+  active=null; juntaAuto=null; resumeTarget=null; paintJornada(); await refresh(); paintOtros(); } }
 function checkAutoClose(){
   if(!att||att.salida)return;
   if(active){lastAct=Date.now();return;}          // hay cronómetro corriendo = activo
