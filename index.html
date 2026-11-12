@@ -376,6 +376,26 @@
     .daytotal{border-left:none;border-top:1px solid var(--border-soft);width:100%;flex-direction:row;gap:12px;justify-content:center}
   }
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  /* ===== HUB de herramientas (overlay) ===== */
+  #hubView{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+  #hubView.hidden{display:none}
+  .hubbar{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);background:var(--panel)}
+  .hubbar .hubtitle{font-weight:600;font-size:15px;color:var(--ink)}
+  .hubbar .pbtn{background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:999px;padding:7px 14px;font-size:13px;cursor:pointer;font-family:inherit}
+  .hubbar .pbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .hubtiles{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;align-content:start;padding:26px}
+  .hubtiles.hidden{display:none}
+  .hubtile{display:flex;flex-direction:column;gap:7px;text-align:left;background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:20px 20px 18px;cursor:pointer;font-family:inherit;color:var(--ink);transition:border-color .15s,transform .1s}
+  .hubtile:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .hubtile .ic{font-size:27px;line-height:1}
+  .hubtile .nm{font-size:16px;font-weight:600}
+  .hubtile .ds{font-size:12.5px;color:var(--muted);line-height:1.4}
+  .hubtile.soon{cursor:default;opacity:.6}
+  .hubtile.soon:hover{border-color:var(--border);transform:none}
+  .hubtile .tag{align-self:flex-start;margin-top:2px;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--warn);background:var(--warn-dim);border-radius:999px;padding:2px 8px}
+  .hubframewrap{flex:1;min-height:0}
+  .hubframewrap.hidden{display:none}
+  .hubframewrap iframe{width:100%;height:100%;border:0;background:var(--bg);display:block}
 </style>
 </head>
 <body>
@@ -451,6 +471,7 @@
     <button class="iconbtn sos" id="sosBtn" title="Pedir apoyo al equipo (En vivo)">📣</button>
     <button class="iconbtn" id="modBtn" title="Módulos activos">⚙</button>
     <button class="iconbtn" id="pipBtn" title="Ventana flotante (cronómetro siempre visible sobre el escritorio)">📌</button>
+    <button class="iconbtn" id="hubBtn" title="Herramientas · Logística (tickets), Portal Central, Inventario">⬚</button>
     <button class="iconbtn" id="switchBtn" title="Ir a mi Centro de Mando personal" style="display:none">⇄</button>
     <button class="iconbtn" id="themeBtn" title="Tema claro/obscuro">☀</button>
     <div class="whoami"><span class="em" id="whoEmail"></span><button id="signout">Cerrar sesión</button></div>
@@ -617,6 +638,36 @@
       <button class="sec" id="nsDown" title="Bajar en la lista" style="width:auto;padding:11px 14px">↓</button>
       <button class="sec" id="nsDel" title="Eliminar" style="width:auto;padding:11px 14px;color:#e17a6e">🗑</button>
     </div>
+  </div>
+</div>
+<!-- ===== HUB de herramientas (Logística embebida, Portal Central, Inventario) ===== -->
+<div id="hubView" class="hidden">
+  <div class="hubbar">
+    <button class="pbtn" id="hubBack" style="display:none">‹ Herramientas</button>
+    <span class="hubtitle" id="hubTitle">⬚ Herramientas · NT / GF</span>
+    <span style="flex:1"></span>
+    <button class="pbtn" id="hubClose">✕ Volver al CMO</button>
+  </div>
+  <div class="hubtiles" id="hubTiles">
+    <button class="hubtile" id="tileLog">
+      <span class="ic">🎟</span><span class="nm">Logística · Tickets</span>
+      <span class="ds">Cotización de flete, status de embarque, reclamos y cambios de tarifa. Con ruteo, seguimiento y bitácora.</span>
+    </button>
+    <button class="hubtile" id="tileTiempos">
+      <span class="ic">⏱</span><span class="nm">Mis tiempos</span>
+      <span class="ds">Tu tablero de pendientes y cronómetro (lo de siempre).</span>
+    </button>
+    <div class="hubtile soon">
+      <span class="ic">🧭</span><span class="nm">Portal Central</span>
+      <span class="ds">Logística y Compras en un solo lugar.</span><span class="tag">Pronto</span>
+    </div>
+    <div class="hubtile soon">
+      <span class="ic">📦</span><span class="nm">Inventario</span>
+      <span class="ds">Existencias y valuación.</span><span class="tag">Pronto</span>
+    </div>
+  </div>
+  <div class="hubframewrap hidden" id="hubFrameWrap">
+    <iframe id="hubFrame" title="Herramienta" referrerpolicy="no-referrer-when-downgrade"></iframe>
   </div>
 </div>
 <div id="toast"></div>
@@ -1702,6 +1753,20 @@ $("#nsSave").addEventListener("click",saveNs);
 $("#nsDel").addEventListener("click",delNs);
 $("#nsUp").addEventListener("click",()=>moveNs(-1));
 $("#nsDown").addEventListener("click",()=>moveNs(1));
+
+// ===== HUB de herramientas (Logística embebida mismo-origen → comparte la sesión del CMO) =====
+const HUB_TOOLS={ logistica:{url:'https://natural-trade-ltd.github.io/nt-logistica/', title:'🎟 Logística · Tickets'} };
+let hubCur=null;
+function openHub(){ $("#hubView").classList.remove("hidden"); hubShowTiles(); }
+function hubShowTiles(){ $("#hubTiles").classList.remove("hidden"); $("#hubFrameWrap").classList.add("hidden"); $("#hubBack").style.display='none'; $("#hubTitle").textContent='⬚ Herramientas · NT / GF'; }
+function hubOpenTool(key){ const t=HUB_TOOLS[key]; if(!t)return; const f=$("#hubFrame");
+  if(hubCur!==key){ f.src=t.url; hubCur=key; }
+  $("#hubTiles").classList.add("hidden"); $("#hubFrameWrap").classList.remove("hidden"); $("#hubBack").style.display=''; $("#hubTitle").textContent=t.title; }
+$("#hubBtn") && $("#hubBtn").addEventListener("click",openHub);
+$("#hubClose") && $("#hubClose").addEventListener("click",()=>$("#hubView").classList.add("hidden"));
+$("#hubBack") && $("#hubBack").addEventListener("click",hubShowTiles);
+$("#tileLog") && $("#tileLog").addEventListener("click",()=>hubOpenTool('logistica'));
+$("#tileTiempos") && $("#tileTiempos").addEventListener("click",()=>$("#hubView").classList.add("hidden"));
 
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
