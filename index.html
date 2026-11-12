@@ -396,6 +396,15 @@
   .hubframewrap{flex:1;min-height:0}
   .hubframewrap.hidden{display:none}
   .hubframewrap iframe{width:100%;height:100%;border:0;background:var(--bg);display:block}
+  .hubtile{position:relative}
+  .hledit{position:absolute;top:9px;right:10px;font-size:12px;color:var(--faint);background:var(--panel-3);border:1px solid var(--border);border-radius:8px;padding:2px 7px;line-height:1.4}
+  .hledit:hover{color:var(--accent);border-color:var(--accent)}
+  #hubAddTile{border-style:dashed;align-items:center;justify-content:center;text-align:center}
+  #hubLinkModal{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(6,12,9,.72);padding:20px}
+  #hubLinkModal.hidden{display:none}
+  #hubLinkModal .hlcard{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:22px;max-width:430px;width:100%}
+  #hubLinkModal label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px}
+  #hubLinkModal input{width:100%;background:var(--panel-3);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit}
 </style>
 </head>
 <body>
@@ -665,9 +674,28 @@
       <span class="ic">📦</span><span class="nm">Inventario ↗</span>
       <span class="ds">Existencias y valuación (NetSuite). Abre en una pestaña nueva.</span>
     </button>
+    <button class="hubtile" id="hubAddTile">
+      <span class="ic">＋</span><span class="nm">Agregar herramienta</span>
+      <span class="ds">Pon un título y un link; aparece aquí para el equipo.</span>
+    </button>
   </div>
   <div class="hubframewrap hidden" id="hubFrameWrap">
     <iframe id="hubFrame" title="Herramienta" referrerpolicy="no-referrer-when-downgrade"></iframe>
+  </div>
+</div>
+<div id="hubLinkModal" class="hidden">
+  <div class="hlcard">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:2px"><h2 style="flex:1;font-size:17px;font-weight:600;margin:0;color:var(--ink)" id="hlTitle">Nueva herramienta</h2><button class="pbtn" id="hlClose">✕</button></div>
+    <label>Título</label>
+    <input id="hlName" placeholder="Ej. Tablero de márgenes" autocomplete="off">
+    <label>Link (URL)</label>
+    <input id="hlUrl" placeholder="https://…" autocomplete="off">
+    <label>Ícono (1 emoji, opcional)</label>
+    <input id="hlIcon" maxlength="2" placeholder="🔗" autocomplete="off">
+    <div style="display:flex;gap:8px;margin-top:18px">
+      <button class="primary" id="hlSave" style="flex:1;margin:0">Guardar</button>
+      <button class="pbtn" id="hlDel" style="color:var(--crit);display:none">🗑 Eliminar</button>
+    </div>
   </div>
 </div>
 <div id="toast"></div>
@@ -1757,7 +1785,7 @@ $("#nsDown").addEventListener("click",()=>moveNs(1));
 // ===== HUB de herramientas (Logística embebida mismo-origen → comparte la sesión del CMO) =====
 const HUB_TOOLS={ logistica:{url:'https://natural-trade-ltd.github.io/nt-logistica/', title:'🎟 Logística · Tickets'} };
 let hubCur=null;
-function openHub(){ $("#hubView").classList.remove("hidden"); hubShowTiles(); }
+function openHub(){ $("#hubView").classList.remove("hidden"); hubShowTiles(); loadHubLinks(); }
 function hubShowTiles(){ $("#hubTiles").classList.remove("hidden"); $("#hubFrameWrap").classList.add("hidden"); $("#hubBack").style.display='none'; $("#hubTitle").textContent='⬚ Herramientas · NT / GF'; }
 function hubOpenTool(key){ const t=HUB_TOOLS[key]; if(!t)return; const f=$("#hubFrame");
   if(hubCur!==key){ f.src=t.url; hubCur=key; }
@@ -1771,6 +1799,37 @@ const PORTAL_CENTRAL_URL='https://4830110.app.netsuite.com/app/site/hosting/scri
 const INVENTARIO_URL='https://4830110.app.netsuite.com/app/site/hosting/scriptlet.nl?script=3813&deploy=1';
 $("#tilePortal") && $("#tilePortal").addEventListener("click",()=>window.open(PORTAL_CENTRAL_URL,'_blank','noopener'));
 $("#tileInv") && $("#tileInv").addEventListener("click",()=>window.open(INVENTARIO_URL,'_blank','noopener'));
+
+// ----- Links editables del hub (cmo_hub_link, compartidos con el equipo) -----
+let hubLinks=[], hlId=null;
+async function loadHubLinks(){ try{ const {data}=await sb.from('cmo_hub_link').select('*').order('sort',{ascending:true}).order('creado_en',{ascending:true}); hubLinks=data||[]; }catch(e){ hubLinks=[]; } renderHubLinks(); }
+function renderHubLinks(){
+  const grid=$("#hubTiles"), addTile=$("#hubAddTile"); if(!grid||!addTile)return;
+  grid.querySelectorAll('[data-hubcustom]').forEach(n=>n.remove());
+  hubLinks.forEach(l=>{
+    const b=document.createElement('button'); b.className='hubtile'; b.setAttribute('data-hubcustom','1');
+    b.innerHTML='<span class="hledit" data-edit="1" title="Editar">✎</span><span class="ic">'+esc(l.icon||'🔗')+'</span><span class="nm">'+esc(l.label)+' ↗</span><span class="ds">'+esc(l.url)+'</span>';
+    b.addEventListener('click',(ev)=>{ if(ev.target&&ev.target.dataset&&ev.target.dataset.edit){ ev.stopPropagation(); openHubLink(l); return; } if(l.url) window.open(l.url,'_blank','noopener'); });
+    grid.insertBefore(b, addTile);
+  });
+}
+function openHubLink(l){ hlId=l?l.id:null; $("#hlTitle").textContent=l?'Editar herramienta':'Nueva herramienta';
+  $("#hlName").value=l?(l.label||''):''; $("#hlUrl").value=l?(l.url||''):''; $("#hlIcon").value=l?(l.icon||''):'';
+  $("#hlDel").style.display=l?'':'none'; $("#hubLinkModal").classList.remove("hidden"); setTimeout(()=>$("#hlName").focus(),30); }
+async function saveHubLink(){ const label=$("#hlName").value.trim(); let url=$("#hlUrl").value.trim();
+  if(!label){ toast('Ponle un título'); return; } if(!url){ toast('Pon el link'); return; }
+  if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  const icon=$("#hlIcon").value.trim()||null;
+  try{ if(hlId){ await sb.from('cmo_hub_link').update({label,url,icon}).eq('id',hlId); }
+    else { const mx=hubLinks.reduce((m,x)=>Math.max(m,x.sort||0),0); await sb.from('cmo_hub_link').insert({label,url,icon,sort:mx+10,creado_por:(me&&me.email)||null}); }
+    $("#hubLinkModal").classList.add("hidden"); toast('Herramienta guardada'); await loadHubLinks();
+  }catch(e){ toast('No se pudo guardar'); } }
+async function delHubLink(){ if(!hlId)return; if(!confirm('¿Eliminar esta herramienta del hub?'))return;
+  try{ await sb.from('cmo_hub_link').delete().eq('id',hlId); $("#hubLinkModal").classList.add("hidden"); toast('Herramienta eliminada'); await loadHubLinks(); }catch(e){ toast('No se pudo eliminar'); } }
+$("#hubAddTile") && $("#hubAddTile").addEventListener("click",()=>openHubLink(null));
+$("#hlClose") && $("#hlClose").addEventListener("click",()=>$("#hubLinkModal").classList.add("hidden"));
+$("#hlSave") && $("#hlSave").addEventListener("click",saveHubLink);
+$("#hlDel") && $("#hlDel").addEventListener("click",delHubLink);
 
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
