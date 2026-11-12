@@ -657,14 +657,14 @@
       <span class="ic">⏱</span><span class="nm">Mis tiempos</span>
       <span class="ds">Tu tablero de pendientes y cronómetro (lo de siempre).</span>
     </button>
-    <div class="hubtile soon">
-      <span class="ic">🧭</span><span class="nm">Portal Central</span>
-      <span class="ds">Logística y Compras en un solo lugar.</span><span class="tag">Pronto</span>
-    </div>
-    <div class="hubtile soon">
-      <span class="ic">📦</span><span class="nm">Inventario</span>
-      <span class="ds">Existencias y valuación.</span><span class="tag">Pronto</span>
-    </div>
+    <button class="hubtile" id="tilePortal">
+      <span class="ic">🧭</span><span class="nm">Portal Central ↗</span>
+      <span class="ds">Logística y Compras (NetSuite). Abre en una pestaña nueva con tu sesión de NetSuite.</span>
+    </button>
+    <button class="hubtile" id="tileInv">
+      <span class="ic">📦</span><span class="nm">Inventario ↗</span>
+      <span class="ds">Existencias y valuación (NetSuite). Abre en una pestaña nueva.</span>
+    </button>
   </div>
   <div class="hubframewrap hidden" id="hubFrameWrap">
     <iframe id="hubFrame" title="Herramienta" referrerpolicy="no-referrer-when-downgrade"></iframe>
@@ -1767,6 +1767,10 @@ $("#hubClose") && $("#hubClose").addEventListener("click",()=>$("#hubView").clas
 $("#hubBack") && $("#hubBack").addEventListener("click",hubShowTiles);
 $("#tileLog") && $("#tileLog").addEventListener("click",()=>hubOpenTool('logistica'));
 $("#tileTiempos") && $("#tileTiempos").addEventListener("click",()=>$("#hubView").classList.add("hidden"));
+const PORTAL_CENTRAL_URL='https://4830110.app.netsuite.com/app/site/hosting/scriptlet.nl?script=3666&deploy=1';
+const INVENTARIO_URL='https://4830110.app.netsuite.com/app/site/hosting/scriptlet.nl?script=3813&deploy=1';
+$("#tilePortal") && $("#tilePortal").addEventListener("click",()=>window.open(PORTAL_CENTRAL_URL,'_blank','noopener'));
+$("#tileInv") && $("#tileInv").addEventListener("click",()=>window.open(INVENTARIO_URL,'_blank','noopener'));
 
 function toast(msg){const el=$("#toast");el.textContent=msg;el.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("show"),2200);}
 </script>
